@@ -32,58 +32,49 @@
         </tr>
         <tr>
           <td>Get data about a single movie by title</td>
-          <td>/movies/[Title]</td>
+          <td>/movies/[title]</td>
           <td>GET</td>
           <td>None</td>
           <td>A JSON object holding data about a single movie, containing a
             title, description, genre property, director property and image.
             Example: <p style="color:blue">
-              {
-                "Genre": {
-                    "Name": "Thriller",
-                    "Description": "Thriller film, also known as suspense film or suspense thriller, is a broad film genre that involvesexcitement and suspense in the audience."
-                },
-                "Director": {
-                    "Name": "Jonathan Demme",
-                    "Bio": "Robert Jonathan Demme was an American director, producer, and screenwriter.",
-                    "Birth": "1944",
-                    "Death": "2017"
-                },
-                "Actors": [],
-                "_id": "5d9bab4307ab30237c44c353",
-                "Title": "Silence of the Lambs",
-                "Description": "A young FBI cadet must receive the help of an incarcerated and manipulative cannibal killer to help catch another serial killer.",
-                "ImagePath": "silenceofthelambs.png",
-                "Featured": true
-              }
-            </p>
-          </td>
+                {
+                  title : 'Iron Man',
+                  description : 'After being held captive in an Afghan cave, billionaire engineer \
+                  Tony Stark creates a unique weaponized suit of armor to fight evil.',
+                  genre : 'Action',
+                  director : 'Jon Favreau',
+                  image : 'iron_man.png'
+              }</p>
+            </td>
         </tr>
         <tr>
           <td>Get data about a movie genre</td>
-          <td>/movies/genres/[Name]</td>
+          <td>/genres/[name]</td>
           <td>GET</td>
           <td>None</td>
           <td>A JSON object holding data about a movie genre.
             Example: <p style="color:blue">
               {
-                "Name": "Action",
-                "Description": "Action film is a film genre in which the protagonist or protagonists are thrust into a series of events that typically include violence, extended fighting, physical feats, and frantic chases."
+                name : 'Comedy',
+                description : 'A comedy film is a genre of film in which the main emphasis
+                is on humour. These films are designed to make the audience laugh through
+                amusement and most often work by exaggerating characteristics for humorous
+                effect.'
               }
             </p>
           </td>
         </tr>
         <tr>
           <td>Get data about a director</td>
-          <td>/movies/directors/[Name]</td>
+          <td>/directors/[name]</td>
           <td>GET</td>
           <td>None</td>
           <td>A JSON object holding data about a director.
             Example: <p style="color:blue">
               {
-                "Name": "Jon Favreau",
-                "Bio": "Jonathan Favreau is an American actor, director, producer, screenwriter, and chef.",
-                "Birth": "1966"
+                name : 'Greg Mottola',
+                born : 'July 11, 1964'
               }
             </p>
           </td>
@@ -95,38 +86,36 @@
           <td>A JSON object holding data about the user to add, structured like:
             <p style="color: blue">
               {
-                "Username" : "helloworld123456",
-                "Password" : "password123456",
-                "Email" : "example123456@gmail.com",
-                "Birthday" : "1970-03-21"
+                username : 'janedoe123',
+                password : 'password123',
+                email : 'example@gmail.com',
+                date_of_birth : "January 1, 1990"
               }
             </p>
           </td>
           <td>A JSON object holding data about the user that was added, including an ID:
             <p style="color:blue">
               {
-                "FavoriteMovies": [],
-                "_id": "5d9d82069bc166069f68524d",
-                "Username": "helloworld123456",
-                "Password": "password123456",
-                "Email": "example123456@gmail.com",
-                "Birthday": "1970-03-21T00:00:00.000Z",
-                "__v": 0
+                id : 1,
+                username : 'janedoe123',
+                password : 'password123',
+                email : 'example@gmail.com',
+                date_of_birth : "January 1, 1990"
               }
             </p>
           </td>
         </tr>
         <tr>
           <td>Update a user's information</td>
-          <td>/users/[Username]</td>
+          <td>/users/[username]</td>
           <td>PUT</td>
           <td>A JSON object holding data about the user to add, structured like:
             <p style="color: blue">
               {
-                "Username" : "Newusername1231561",
-                "Password" : "Newpassword3486198",
-                "Email" : "Newemail16513651@gmail.com",
-                "Birthday" : "1980-10-15"
+                username : 'janedoe123',
+                password : 'password123',
+                email : 'example@gmail.com',
+                date_of_birth : "January 1, 1990"
               }
             </p>
           </td>
@@ -134,21 +123,21 @@
         </tr>
         <tr>
           <td>Add movies to user's list of favorites</td>
-          <td>/users/[Username]/Movies/[MovieID]</td>
+          <td>/users/[username]/favorites</td>
           <td>POST</td>
           <td>None</td>
           <td>A message indicating the movie was added to the user's list of favorites</td>
         </tr>
         <tr>
           <td>Remove movies from user's list of favorites</td>
-          <td>/users/[Username]/Movies/[MovieID]</td>
+          <td>/users/[username]/favorites</td>
           <td>DELETE</td>
           <td>None</td>
           <td>A message indicating the movie was removed from the user's list of favorites</td>
         </tr>
         <tr>
           <td>Remove user accounts</td>
-          <td>/users/[Username]</td>
+          <td>/users/[username]</td>
           <td>DELETE</td>
           <td>None</td>
           <td>A message indicating the user's account was deleted</td>
