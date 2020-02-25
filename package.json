@@ -4,29 +4,32 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index.js"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/jimmyyhsu/my-flix-database.git"
+    "url": "git+https://github.com/edenbenbow/watchr.git"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/jimmyyhsu/my-flix-database/issues"
+    "url": "https://github.com/edenbenbow/watchr/issues"
   },
-  "homepage": "https://github.com/jimmyyhsu/my-flix-database#readme",
+  "homepage": "https://github.com/edenbenbow/watchr#readme",
   "dependencies": {
+    "bcrypt": "^3.0.6",
     "body-parser": "^1.19.0",
+    "cors": "^2.8.5",
     "express": "^4.17.1",
+    "express-validator": "^6.3.0",
     "jsonwebtoken": "^8.5.1",
-    "mongoose": "^5.7.3",
+    "lodash": "^4.17.15",
+    "mongoose": "^5.8.7",
     "morgan": "^1.9.1",
     "passport": "^0.4.0",
     "passport-jwt": "^4.0.0",
     "passport-local": "^1.0.0",
     "uuid": "^3.3.3"
-  },
-  "devDependencies": {}
+  }
 }
