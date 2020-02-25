@@ -1,159 +1,120 @@
 <!DOCTYPE html>
-<html>
-  <head>
+<html lang="en">
+<head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width">
+    <title>Watchr</title>
     <link rel="stylesheet" type="text/css" href="css/styles.css">
-    <title>My Flix</title>
-  </head>
-  <body>
-    <h1>Documentation</h1>
-    <p>This web application will provide users with access to information
-    about different movies, directors, and genres. Users will be able to sign
-    up, update their personal information, and create a list of their favorite
-    movies.
-    </p>
-    <table class="content-table" style="width: 1000px;">
-      <thead>
-        <tr>
-          <th style="width: 120px;">Request</th>
-          <th>URL</th>
-          <th>HTTP Method</th>
-          <th style="width: 100px;">Request Body Data Format</th>
-          <th>Response Body Data Format</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr>
-          <td>Get a list of ALL movies to the user</td>
-          <td>/movies</td>
-          <td>GET</td>
-          <td>None</td>
-          <td>A JSON object holding data about all the movies</td>
-        </tr>
-        <tr>
-          <td>Get data about a single movie by title</td>
-          <td>/movies/[Title]</td>
-          <td>GET</td>
-          <td>None</td>
-          <td>A JSON object holding data about a single movie, containing a
-            title, description, genre property, director property and image.
-            Example: <p style="color:blue">
-              {
-                "Genre": {
-                    "Name": "Thriller",
-                    "Description": "Thriller film, also known as suspense film or suspense thriller, is a broad film genre that involvesexcitement and suspense in the audience."
-                },
-                "Director": {
-                    "Name": "Jonathan Demme",
-                    "Bio": "Robert Jonathan Demme was an American director, producer, and screenwriter.",
-                    "Birth": "1944",
-                    "Death": "2017"
-                },
-                "Actors": [],
-                "_id": "5d9bab4307ab30237c44c353",
-                "Title": "Silence of the Lambs",
-                "Description": "A young FBI cadet must receive the help of an incarcerated and manipulative cannibal killer to help catch another serial killer.",
-                "ImagePath": "silenceofthelambs.png",
-                "Featured": true
-              }
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td>Get data about a movie genre</td>
-          <td>/movies/genres/[Name]</td>
-          <td>GET</td>
-          <td>None</td>
-          <td>A JSON object holding data about a movie genre.
-            Example: <p style="color:blue">
-              {
-                "Name": "Action",
-                "Description": "Action film is a film genre in which the protagonist or protagonists are thrust into a series of events that typically include violence, extended fighting, physical feats, and frantic chases."
-              }
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td>Get data about a director</td>
-          <td>/movies/directors/[Name]</td>
-          <td>GET</td>
-          <td>None</td>
-          <td>A JSON object holding data about a director.
-            Example: <p style="color:blue">
-              {
-                "Name": "Jon Favreau",
-                "Bio": "Jonathan Favreau is an American actor, director, producer, screenwriter, and chef.",
-                "Birth": "1966"
-              }
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td>Add new user accounts</td>
-          <td>/users</td>
-          <td>POST</td>
-          <td>A JSON object holding data about the user to add, structured like:
-            <p style="color: blue">
-              {
-                "Username" : "helloworld123456",
-                "Password" : "password123456",
-                "Email" : "example123456@gmail.com",
-                "Birthday" : "1970-03-21"
-              }
-            </p>
-          </td>
-          <td>A JSON object holding data about the user that was added, including an ID:
-            <p style="color:blue">
-              {
-                "FavoriteMovies": [],
-                "_id": "5d9d82069bc166069f68524d",
-                "Username": "helloworld123456",
-                "Password": "password123456",
-                "Email": "example123456@gmail.com",
-                "Birthday": "1970-03-21T00:00:00.000Z",
-                "__v": 0
-              }
-            </p>
-          </td>
-        </tr>
-        <tr>
-          <td>Update a user's information</td>
-          <td>/users/[Username]</td>
-          <td>PUT</td>
-          <td>A JSON object holding data about the user to add, structured like:
-            <p style="color: blue">
-              {
-                "Username" : "Newusername1231561",
-                "Password" : "Newpassword3486198",
-                "Email" : "Newemail16513651@gmail.com",
-                "Birthday" : "1980-10-15"
-              }
-            </p>
-          </td>
-          <td>A text message indicating the user's information was updated</td>
-        </tr>
-        <tr>
-          <td>Add movies to user's list of favorites</td>
-          <td>/users/[Username]/Movies/[MovieID]</td>
-          <td>POST</td>
-          <td>None</td>
-          <td>A message indicating the movie was added to the user's list of favorites</td>
-        </tr>
-        <tr>
-          <td>Remove movies from user's list of favorites</td>
-          <td>/users/[Username]/Movies/[MovieID]</td>
-          <td>DELETE</td>
-          <td>None</td>
-          <td>A message indicating the movie was removed from the user's list of favorites</td>
-        </tr>
-        <tr>
-          <td>Remove user accounts</td>
-          <td>/users/[Username]</td>
-          <td>DELETE</td>
-          <td>None</td>
-          <td>A message indicating the user's account was deleted</td>
-        </tr>
-      </tbody>
-    </table>
-  </body>
+</head>
+<body>
+<h1>Watchr documentation</h1>
+<p>This web app is designed to provide users with access to information about different movies, directors, and genres.</p>
+
+<p>Users will be able to sign up, update their personal information, and compile a list of their favorite movies.</p>
+
+<table>
+  <thead>
+    <tr id="header">
+      <th>Request</th>
+      <th>URL</th>
+      <th>HTTP method</th>
+      <th>Query parameters</th>
+      <th>Request body data format</th>
+      <th>Response data format</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Return a list of all movies</td>
+      <td>/movies</td>
+      <td>GET</td>
+      <td>None</td>
+      <td>None</td>
+      <td>JSON object holding data about all movies.</td>
+    </tr>
+    <tr>
+      <td>Return data (description, genre, director, image URL) about a single movie by title</td>
+      <td>/movies/[name]</td>
+      <td>GET</td>
+      <td>None</td>
+      <td>None</td>
+      <td>JSON object showing movie data including genre, name, and description. Example:<br><font class="example">{"Genre":{"Name":"Comedy","Description":"The main purpose of the comedy genre is to amuse the audience."},"Director":{"Name":"Chris Rock","Bio":"Chris Rock is an American comedian, director, producer, and screenwriter.","Birth":"1965-02-07T00:00:00.000Z"},"_id":"5e1110e8c6b8972a9a43264e","Title":"Head of State","Description":"Chris Rock plays Mays Gilliam, a Washington, D.C., alderman who becomes a longshot presidential candidate.","ImagePath":"headofstate.png","Featured":true}</font></td>
+    </tr>
+    <tr>
+      <td>Return data about a genre (description) by name/title</td>
+      <td>/movies/genres/[name]</td>
+      <td>GET</td>
+      <td>None</td>
+      <td>None</td>
+      <td>A text message showing the genre's name and description. Example:<br>
+        <font class="example"><p>Western</p>
+        <p>Westerns tell stories primarily in the second half of the 19th century in the American Old West. The protagonists are often cowboys or gunfighters.</font></p>
+        </td>
+    </tr>
+    <tr>
+      <td>Return data about a director (bio, birth year) by name</td>
+      <td>/movies/directors/[name]</td>
+      <td>GET</td>
+      <td>None</td>
+      <td>None</td>
+      <td>JSON object holding data about the director. Example:<br>
+      <font class="example">{"Name":"Mike Newell","Bio":"Mike Newell is a British director and producer.","Birth":"1942-03-28T00:00:00.000Z"}</font></td>
+    </tr>
+    <tr>
+      <td>Allow new users to register</td>
+      <td>/users</td>
+      <td>POST</td>
+      <td>None</td>
+      <td>JSON object that contains new user data.<br>
+       Example:<br>
+        <font class="example">{
+        "Username": "janeanderson",
+        "Password": "12345",
+        "Email": "janeanderson@gmail.com",
+        "Birthday": "1/1/2001" }</font>
+      </td>
+      <td>JSON object showing new user data, including username, password, email, and date of birth</td>
+    </tr>
+    <tr>
+      <td>Allow users to update their user info</td>
+      <td>/users/[UserID]</td>
+      <td>PUT</td>
+      <td>None</td>
+      <td>JSON object. Example:<br>
+        <font class="example">{
+        "Username": "johnsmith",
+        "Password": "12345",
+        "Email": "johnsmith@gmail.com",
+        "Birthday": "1/1/2001" }</font></td>
+      <td>A text message confirming the user info was updated</td>
+    </tr>
+    <tr>
+      <td>Allow users to add a movie to their list of favorites</td>
+      <td>/users/[username]/favorites/[MovieID]</td>
+      <td>POST</td>
+      <td>None</td>
+      <td>None</td>
+      <td>JSON object showing submitted movie data</td>
+    </tr>
+    <tr>
+      <td>Allow users to remove a movie from their list of favorites</td>
+      <td>/users/[username]/favorites/[MovieID]</td>
+      <td>DELETE</td>
+      <td>None</td>
+      <td>None</td>
+      <td>A text message confirming the movie was removed</td>
+    </tr>
+    <tr>
+      <td>Allow existing users to deregister</td>
+      <td>/users/[UserID]</td>
+      <td>DELETE</td>
+      <td>None</td>
+      <td>None</td>
+      <td>A text message confirming the account was deleted. Example:<br>
+      <font class="example">janie123 was deleted.</font></td>
+    </tr>
+  </tbody>
+</table>
+
+</body>
 </html>

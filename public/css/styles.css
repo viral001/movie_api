@@ -1,33 +1,52 @@
-.content-table {
-    border-collapse: collapse;
-    margin: 25px 0;
-    font-size: 0.9em;
-    /*min-width: 400px;*/
-    border-radius: 5px 5px 0 0;
-    overflow: hidden;
-    box-shadow: 0 0 20px rgba(0, 0, 0, 0.15);
+/*
+===================================
+General
+===================================
+ */
+
+* {
+  box-sizing: border-box;
 }
 
-.content-table thead tr {
-    background-color: #089879;
-    color: #ffffff;
-    text-align: left;
-    font-weight: bold;
+
+h1 {
+  position: relative;
+  font-family: 'Trbuchet MS', Arial, Helvetica, sand-serif;
 }
 
-.content-table th,
-.content-table td {
-    padding: 12px 15px;
+#header {
+  color: #0B6623;
 }
 
-.content-table tbody tr {
-    border-bottom: 1px solid #dddddd;
+body {
+font-family: 'Roboto', sans-serif;
+line-height: 1.5;
+margin-top: 40px;
+margin-left: 40px;
+margin-right: 40px;
+text-align: left;
 }
 
-.content-table tbody tr:nth-of-type(even) {
-    background-color: #f3f3f3;
+.example {
+  color: blue;
+  size: 12px;
+  margin-top: 10px;
 }
 
-.content-table tbody tr:last-of-type {
-    border-bottom: 2px solid #089879
+table {
+width: 100%;
+border: 2px solid lightgrey;
+border-collapse: collapse;
+margin-bottom: 40px;
+}
+
+th {
+padding: 5px;
+border:  2px solid lightgrey;
+}
+
+td {
+width: 15%;
+padding: 5px;
+border: 1px solid lightgrey;
 }
