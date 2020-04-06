@@ -49,7 +49,7 @@ app.use(cors({
 //GET request
 
 app.get('/', function (req, res) {
-  var responseText = 'Welcome to Watchr. Enjoy!'
+  var responseText = 'Welcome to Mypage. Enjoy!'
   res.send(responseText);
 });
 
