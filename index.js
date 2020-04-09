@@ -11,6 +11,7 @@ const Users = Models.User;
 const cors = require('cors');
 const { check, validationResult } = require('express-validator');
 
+app.use(bodyParser.json());
 const auth = require('./auth')(app);
 const passport = require('passport');
 require('./passport');
@@ -26,7 +27,6 @@ mongoose.connect(process.env.CONNECTION_URI, {
 
 //Middleware functions
 
-app.use(bodyParser.json());
 app.use(morgan('common'));
 app.use(express.static('public'));
 app.use(function (err, req, res, next) {
