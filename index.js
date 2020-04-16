@@ -35,11 +35,16 @@ app.use(function (err, req, res, next) {
   next()
 });
 
+app.use(cors());
+
+let allowedOrigins = [`http://localhost:${port}`, ...process.env.ALLOWED_ORIGINS.split(' ')];
+
 app.use(cors({
-  origin: function (origin, callback) {
+  origin: (origin, callback) => {
     if (!origin) return callback(null, true);
     if (allowedOrigins.indexOf(origin) === -1) {
-      var message = 'The CORS policy for this application does not allow access from origin ' + origin;
+      // If a specific origin is not found on the list of allowed origins.
+      let message = `The CORS policy for this application does not allow access from origin: ${origin}`;
       return callback(new Error(message), false);
     }
     return callback(null, true);
@@ -52,6 +57,9 @@ app.get('/', function (req, res) {
   var responseText = 'Welcome to Mypage. Enjoy!'
   res.send(responseText);
 });
+
+// passport.authenticate('jwt', { session: false }) < (remove it to allow anonymous users to make requests on the movies endpoint)
+app.get('/movies', function (_req, res)
 
 //Returns a list of all movies
 
