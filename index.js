@@ -37,7 +37,7 @@ app.use(function (err, req, res, next) {
 
 app.use(cors());
 
-let allowedOrigins = [`http://localhost:${port}`, ...process.env.ALLOWED_ORIGINS.split(' ')];
+let allowedOrigins = ['http://localhost:3000', 'https://movie-api0.herokuapp.com/'];
 
 app.use(cors({
   origin: (origin, callback) => {
