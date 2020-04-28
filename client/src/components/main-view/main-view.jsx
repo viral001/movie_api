@@ -1,36 +1,54 @@
 // client/src/components/main-view/main-view.jsx
 import React from 'react';
 import axios from 'axios';
-//import PropTypes from 'prop-types'; // Not at the moment
 
-// views imports
+//import view
 import { LoginView } from '../login-view/login-view';
 import { MovieCard } from '../movie-card/movie-card';
 import { MovieView } from '../movie-view/movie-view';
+import { RegistrationView } from '../registration-view/registration-view';
 
-//react-bootstrap imports // not now
+//react-bootstrap imports
 import Container from 'react-bootstrap/Container';
-import Col from 'react-bootstrap/Col';
 import Row from 'react-bootstrap/Row';
-import Navbar from 'react-bootstrap/Navbar';
+import Col from 'react-bootstrap/Col';
+import './main-view.scss';
 
 export class MainView extends React.Component {
-    constructor() {
-        //Call the superclass constructor
-        // so React can initialize it
-        super();
+    constructor(props) {
+        super(props);
 
         // Initialize the state to an empty object so we can destructure it later
         this.state = {
             movies: null,
             selectedMovie: null,
             user: null,
-            userAction: null
+            newUser: null
         };
     }
+
     componentDidMount() {
+        let accessToken = localStorage.getItem('token');
+        if (accessToken !== null) {
+            this.setState({
+                user: localStorage.getItem('user')
+            });
+            this.getMovies(accessToken);
+            this.getUser(localStorage.getItem('user'), accessToken);
+        }
+    }
+
+    onMovieClick(movie) {
+        this.setState({
+            selectedMovie: movie
+        });
+    }
+
+    getMovies(token) {
         axios
-            .get('https://soflix.herokuapp.com')
+            .get('https://movie-api0.herokuapp.com/', {
+                headers: { Authorization: `Bearer ${token}` }
+            })
             .then(response => {
                 this.setState({
                     movies: response.data
@@ -41,153 +59,59 @@ export class MainView extends React.Component {
             });
     }
 
-    onMovieClick(movie) {
+    onLoggedIn(authData) {
+        console.log(authData);
         this.setState({
-            selectedMovie: movie,
-            userAction: null
+            user: authData.user.Username
+        });
+        localStorage.setItem('token', authData.token);
+        localStorage.setItem('user', authData.user.Username);
+        this.getMovies(authData.token);
+    }
+
+    registerUser() {
+        this.setState({
+            newUser: true
         });
     }
 
-    onLoggedIn(user) {
-        this.setState({
-            user,
-            userAction: null
-        });
-    }
-
-    onNewUserRegistered(user) {
-        this.setState({
-            user,
-            userAction: null
-        });
-    }
-
-    onBackClick(_movie) {
+    resetMainView() {
         this.setState({
             selectedMovie: null
         });
     }
 
     render() {
-        // If the state isn't initialized, this will throw on runtime
-        // before the data is initially loaded
-        const { movies, selectedMovie, user } = this.state;
-
+        const { movies, selectedMovie, user, newUser } = this.state;
+        if (newUser)
+            return <RegistrationView RegisterUser={newUser => this.RegisterUser()} />;
         if (!user) return <LoginView onLoggedIn={user => this.onLoggedIn(user)} />;
-
-        if (!movies) return <body className='main-view' />;
-
+        if (!movies) return <div className='main-view' />;
         return (
-            <body className='moview'>
-                <Navbar className='title' fluid='true'>
-                    <Navbar.Brand> MovieFlix App</Navbar.Brand>
-                </Navbar>
-                <Container className='main-view'>
-                    <Row>
-                        {selectedMovie ? (
-                            <Col>
-                                <MovieView
-                                    movie={selectedMovie}
-                                    onClick={() => this.onBackClick()}
-                                />
-                            </Col>
-                        ) : (
-                                movies.map(movie => (
-                                    <Col xl={4} sm={6} md={4} xs={10}>
-                                        <MovieCard
-                                            key={movie._id}
-                                            movie={movie}
-                                            onClick={movie => this.onMovieClick(movie)}
-                                        />
-                                    </Col>
-                                ))
-                            )}
-                    </Row>
-                </Container>
-                <Navbar fixed='bottom' className='borderBottom' fluid='true'>
-                    <Navbar.Brand href='#'>Navbar</Navbar.Brand>
-                </Navbar>
-            </body>
-        );
-    }
-} ')
-    .then(response => {
-        this.setState({
-            movies: response.data
-        });
-    })
-    .catch(function (error) {
-        console.log(error);
-    });
-    }
-
-onMovieClick(movie) {
-    this.setState({
-        selectedMovie: movie,
-        userAction: null
-    });
-}
-
-onLoggedIn(user) {
-    this.setState({
-        user,
-        userAction: null
-    });
-}
-
-onNewUserRegistered(user) {
-    this.setState({
-        user,
-        userAction: null
-    });
-}
-
-onBackClick(_movie) {
-    this.setState({
-        selectedMovie: null
-    });
-}
-
-render() {
-    // If the state isn't initialized, this will throw on runtime
-    // before the data is initially loaded
-    const { movies, selectedMovie, user } = this.state;
-
-    if (!user) return <LoginView onLoggedIn={user => this.onLoggedIn(user)} />;
-
-    if (!movies) return <body className='main-view' />;
-
-    return (
-        <body className='moview'>
-            <Navbar className='title' fluid='true'>
-                <Navbar.Brand> MovieFlix App</Navbar.Brand>
-            </Navbar>
-            <Container className='main-view'>
+            <Container className='main-view' fluid='true'>
                 <Row>
                     {selectedMovie ? (
                         <Col>
+                            {' '}
                             <MovieView
+                                returnCallback={() => this.ResetMainView()}
                                 movie={selectedMovie}
-                                onClick={() => this.onBackClick()}
-                            />
+                            />{' '}
                         </Col>
                     ) : (
                             movies.map(movie => (
-                                <Col xl={4} sm={6} md={4} xs={10}>
+                                <Col>
+                                    {' '}
                                     <MovieCard
                                         key={movie._id}
                                         movie={movie}
                                         onClick={movie => this.onMovieClick(movie)}
-                                    />
+                                    />{' '}
                                 </Col>
                             ))
                         )}
                 </Row>
             </Container>
-            <Navbar fixed='bottom' className='borderBottom' fluid='true'>
-                <Navbar.Brand href='#'>Navbar</Navbar.Brand>
-            </Navbar>
-        </body>
-    );
-}
+        );
+    }
 }
