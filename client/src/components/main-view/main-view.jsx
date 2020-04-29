@@ -15,43 +15,26 @@ import Col from 'react-bootstrap/Col';
 import './main-view.scss';
 
 export class MainView extends React.Component {
-    constructor(props) {
-        super(props);
+    constructor() {
+        super();
 
-        // Initialize the state to an empty object so we can destructure it later
         this.state = {
             movies: null,
             selectedMovie: null,
             user: null,
-            newUser: null
+            register: false,
         };
-    }
-
-    componentDidMount() {
-        let accessToken = localStorage.getItem('token');
-        if (accessToken !== null) {
-            this.setState({
-                user: localStorage.getItem('user')
-            });
-            this.getMovies(accessToken);
-            this.getUser(localStorage.getItem('user'), accessToken);
-        }
-    }
-
-    onMovieClick(movie) {
-        this.setState({
-            selectedMovie: movie
-        });
     }
 
     getMovies(token) {
         axios
             .get('https://movie-api0.herokuapp.com/', {
-                headers: { Authorization: `Bearer ${token}` }
+                headers: { Authorization: `Bearer ${token}` },
             })
-            .then(response => {
+            .then((response) => {
+                // Assign the result to the state
                 this.setState({
-                    movies: response.data
+                    movies: response.data,
                 });
             })
             .catch(function (error) {
@@ -59,59 +42,104 @@ export class MainView extends React.Component {
             });
     }
 
+    componentDidMount() {
+        let accessToken = localStorage.getItem('token');
+        if (accessToken !== null) {
+            this.setState({
+                user: localStorage.getItem('user'),
+            });
+            this.getMovies(accessToken);
+        }
+    }
+
+    onMovieClick(movie) {
+        this.setState({
+            selectedMovie: movie,
+            // userAction: null,
+        });
+    }
+
     onLoggedIn(authData) {
         console.log(authData);
         this.setState({
-            user: authData.user.Username
+            user: authData.user.Username,
         });
+
         localStorage.setItem('token', authData.token);
         localStorage.setItem('user', authData.user.Username);
         this.getMovies(authData.token);
     }
 
-    registerUser() {
+    // onLoggedIn(user) {
+    //   this.setState({
+    //     user,
+    //     // userAction: null,
+    //   });
+    // }
+
+    //button to return to all movies view
+    onButtonClick() {
         this.setState({
-            newUser: true
+            selectedMovie: null,
         });
     }
 
-    resetMainView() {
+    //testing
+    onSignedIn(user) {
         this.setState({
-            selectedMovie: null
+            user: user,
+            register: false,
         });
+    }
+
+    register() {
+        this.setState({ register: true });
     }
 
     render() {
-        const { movies, selectedMovie, user, newUser } = this.state;
-        if (newUser)
-            return <RegistrationView RegisterUser={newUser => this.RegisterUser()} />;
-        if (!user) return <LoginView onLoggedIn={user => this.onLoggedIn(user)} />;
-        if (!movies) return <div className='main-view' />;
+        const { movies, selectedMovie, user, register } = this.state;
+
+        if (!user && register === false)
+            return (
+                <LoginView
+                    onClick={() => this.onRegistered()}
+                    onLoggedIn={(user) => this.onLoggedIn(user)}
+                />
+            );
+
+        if (register)
+            return (
+                <RegistrationView
+                    onClick={() => this.alreadyMember()}
+                    onSignedIn={(user) => this.onSignedIn(user)}
+                />
+            );
+
+        //before the movies has been loaded
+        if (!movies) return <div className="main-view" />;
         return (
-            <Container className='main-view' fluid='true'>
-                <Row>
-                    {selectedMovie ? (
-                        <Col>
-                            {' '}
+            <div className="main-view">
+                <Container>
+                    <Row>
+                        {selectedMovie ? (
                             <MovieView
-                                returnCallback={() => this.ResetMainView()}
                                 movie={selectedMovie}
-                            />{' '}
-                        </Col>
-                    ) : (
-                            movies.map(movie => (
-                                <Col>
-                                    {' '}
-                                    <MovieCard
-                                        key={movie._id}
-                                        movie={movie}
-                                        onClick={movie => this.onMovieClick(movie)}
-                                    />{' '}
-                                </Col>
-                            ))
-                        )}
-                </Row>
-            </Container>
+                                onClick={() => this.onButtonClick()}
+                            />
+                        ) : (
+                                movies.map((movie) => (
+                                    <Col key={movie._id} xs={12} sm={6} md={4}>
+                                        <MovieCard
+                                            key={movie._id}
+                                            movie={movie}
+                                            onClick={(movie) => this.onMovieClick(movie)}
+                                        />
+                                    </Col>
+                                ))
+                            )}
+                    </Row>
+                </Container>
+            </div>
         );
     }
 }
