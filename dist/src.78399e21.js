@@ -324,7 +324,7 @@ checkPropTypes.resetWarningCache = function () {
 
 module.exports = checkPropTypes;
 },{"./lib/ReactPropTypesSecret":"../node_modules/prop-types/lib/ReactPropTypesSecret.js"}],"../node_modules/react/cjs/react.development.js":[function(require,module,exports) {
-/** @license React v16.10.2
+/** @license React v16.13.1
  * react.development.js
  *
  * Copyright (c) Facebook, Inc. and its affiliates.
@@ -340,10 +340,9 @@ if ("development" !== "production") {
 
     var _assign = require('object-assign');
 
-    var checkPropTypes = require('prop-types/checkPropTypes'); // TODO: this is special because it gets imported during build.
+    var checkPropTypes = require('prop-types/checkPropTypes');
 
-
-    var ReactVersion = '16.10.2'; // The Symbol used to tag the ReactElement-like types. If there is no native Symbol
+    var ReactVersion = '16.13.1'; // The Symbol used to tag the ReactElement-like types. If there is no native Symbol
     // nor polyfill, then a plain number is used for performance.
 
     var hasSymbol = typeof Symbol === 'function' && Symbol.for;
@@ -354,7 +353,6 @@ if ("development" !== "production") {
     var REACT_PROFILER_TYPE = hasSymbol ? Symbol.for('react.profiler') : 0xead2;
     var REACT_PROVIDER_TYPE = hasSymbol ? Symbol.for('react.provider') : 0xeacd;
     var REACT_CONTEXT_TYPE = hasSymbol ? Symbol.for('react.context') : 0xeace; // TODO: We don't use AsyncMode or ConcurrentMode anymore. They were temporary
-    // (unstable) APIs that have been removed. Can we remove the symbols?
 
     var REACT_CONCURRENT_MODE_TYPE = hasSymbol ? Symbol.for('react.concurrent_mode') : 0xeacf;
     var REACT_FORWARD_REF_TYPE = hasSymbol ? Symbol.for('react.forward_ref') : 0xead0;
@@ -362,6 +360,7 @@ if ("development" !== "production") {
     var REACT_SUSPENSE_LIST_TYPE = hasSymbol ? Symbol.for('react.suspense_list') : 0xead8;
     var REACT_MEMO_TYPE = hasSymbol ? Symbol.for('react.memo') : 0xead3;
     var REACT_LAZY_TYPE = hasSymbol ? Symbol.for('react.lazy') : 0xead4;
+    var REACT_BLOCK_TYPE = hasSymbol ? Symbol.for('react.block') : 0xead9;
     var REACT_FUNDAMENTAL_TYPE = hasSymbol ? Symbol.for('react.fundamental') : 0xead5;
     var REACT_RESPONDER_TYPE = hasSymbol ? Symbol.for('react.responder') : 0xead6;
     var REACT_SCOPE_TYPE = hasSymbol ? Symbol.for('react.scope') : 0xead7;
@@ -380,121 +379,263 @@ if ("development" !== "production") {
       }
 
       return null;
-    } // Do not require this module directly! Use normal `invariant` calls with
-    // template literal strings. The messages will be converted to ReactError during
-    // build, and in production they will be minified.
-    // Do not require this module directly! Use normal `invariant` calls with
-    // template literal strings. The messages will be converted to ReactError during
-    // build, and in production they will be minified.
-
-
-    function ReactError(error) {
-      error.name = 'Invariant Violation';
-      return error;
     }
     /**
-     * Use invariant() to assert state which your program assumes to be true.
-     *
-     * Provide sprintf-style format (only %s is supported) and arguments
-     * to provide information about what broke and what you were
-     * expecting.
-     *
-     * The invariant message will be stripped in production, but the invariant
-     * will remain to ensure logic does not differ in production.
+     * Keeps track of the current dispatcher.
      */
 
+
+    var ReactCurrentDispatcher = {
+      /**
+       * @internal
+       * @type {ReactComponent}
+       */
+      current: null
+    };
     /**
-     * Forked from fbjs/warning:
-     * https://github.com/facebook/fbjs/blob/e66ba20ad5be433eb54423f2b097d829324d9de6/packages/fbjs/src/__forks__/warning.js
-     *
-     * Only change is we use console.warn instead of console.error,
-     * and do nothing when 'console' is not supported.
-     * This really simplifies the code.
-     * ---
-     * Similar to invariant but only logs a warning if the condition is not met.
-     * This can be used to log issues in development environments in critical
-     * paths. Removing the logging code for production environments will keep the
-     * same logic and follow the same code paths.
+     * Keeps track of the current batch's configuration such as how long an update
+     * should suspend for if it needs to.
      */
 
+    var ReactCurrentBatchConfig = {
+      suspense: null
+    };
+    /**
+     * Keeps track of the current owner.
+     *
+     * The current owner is the component who should own any components that are
+     * currently being constructed.
+     */
 
-    var lowPriorityWarningWithoutStack = function () {};
+    var ReactCurrentOwner = {
+      /**
+       * @internal
+       * @type {ReactComponent}
+       */
+      current: null
+    };
+    var BEFORE_SLASH_RE = /^(.*)[\\\/]/;
+
+    function describeComponentFrame(name, source, ownerName) {
+      var sourceInfo = '';
+
+      if (source) {
+        var path = source.fileName;
+        var fileName = path.replace(BEFORE_SLASH_RE, '');
+        {
+          // In DEV, include code for a common special case:
+          // prefer "folder/index.js" instead of just "index.js".
+          if (/^index\./.test(fileName)) {
+            var match = path.match(BEFORE_SLASH_RE);
+
+            if (match) {
+              var pathBeforeSlash = match[1];
+
+              if (pathBeforeSlash) {
+                var folderName = pathBeforeSlash.replace(BEFORE_SLASH_RE, '');
+                fileName = folderName + '/' + fileName;
+              }
+            }
+          }
+        }
+        sourceInfo = ' (at ' + fileName + ':' + source.lineNumber + ')';
+      } else if (ownerName) {
+        sourceInfo = ' (created by ' + ownerName + ')';
+      }
+
+      return '\n    in ' + (name || 'Unknown') + sourceInfo;
+    }
+
+    var Resolved = 1;
+
+    function refineResolvedLazyComponent(lazyComponent) {
+      return lazyComponent._status === Resolved ? lazyComponent._result : null;
+    }
+
+    function getWrappedName(outerType, innerType, wrapperName) {
+      var functionName = innerType.displayName || innerType.name || '';
+      return outerType.displayName || (functionName !== '' ? wrapperName + "(" + functionName + ")" : wrapperName);
+    }
+
+    function getComponentName(type) {
+      if (type == null) {
+        // Host root, text node or just invalid type.
+        return null;
+      }
+
+      {
+        if (typeof type.tag === 'number') {
+          error('Received an unexpected object in getComponentName(). ' + 'This is likely a bug in React. Please file an issue.');
+        }
+      }
+
+      if (typeof type === 'function') {
+        return type.displayName || type.name || null;
+      }
+
+      if (typeof type === 'string') {
+        return type;
+      }
+
+      switch (type) {
+        case REACT_FRAGMENT_TYPE:
+          return 'Fragment';
+
+        case REACT_PORTAL_TYPE:
+          return 'Portal';
+
+        case REACT_PROFILER_TYPE:
+          return "Profiler";
+
+        case REACT_STRICT_MODE_TYPE:
+          return 'StrictMode';
+
+        case REACT_SUSPENSE_TYPE:
+          return 'Suspense';
+
+        case REACT_SUSPENSE_LIST_TYPE:
+          return 'SuspenseList';
+      }
+
+      if (typeof type === 'object') {
+        switch (type.$$typeof) {
+          case REACT_CONTEXT_TYPE:
+            return 'Context.Consumer';
+
+          case REACT_PROVIDER_TYPE:
+            return 'Context.Provider';
+
+          case REACT_FORWARD_REF_TYPE:
+            return getWrappedName(type, type.render, 'ForwardRef');
+
+          case REACT_MEMO_TYPE:
+            return getComponentName(type.type);
+
+          case REACT_BLOCK_TYPE:
+            return getComponentName(type.render);
+
+          case REACT_LAZY_TYPE:
+            {
+              var thenable = type;
+              var resolvedThenable = refineResolvedLazyComponent(thenable);
+
+              if (resolvedThenable) {
+                return getComponentName(resolvedThenable);
+              }
+
+              break;
+            }
+        }
+      }
+
+      return null;
+    }
+
+    var ReactDebugCurrentFrame = {};
+    var currentlyValidatingElement = null;
+
+    function setCurrentlyValidatingElement(element) {
+      {
+        currentlyValidatingElement = element;
+      }
+    }
 
     {
-      var printWarning = function (format) {
+      // Stack implementation injected by the current renderer.
+      ReactDebugCurrentFrame.getCurrentStack = null;
+
+      ReactDebugCurrentFrame.getStackAddendum = function () {
+        var stack = ''; // Add an extra top frame while an element is being validated
+
+        if (currentlyValidatingElement) {
+          var name = getComponentName(currentlyValidatingElement.type);
+          var owner = currentlyValidatingElement._owner;
+          stack += describeComponentFrame(name, currentlyValidatingElement._source, owner && getComponentName(owner.type));
+        } // Delegate to the injected renderer-specific implementation
+
+
+        var impl = ReactDebugCurrentFrame.getCurrentStack;
+
+        if (impl) {
+          stack += impl() || '';
+        }
+
+        return stack;
+      };
+    }
+    /**
+     * Used by act() to track whether you're inside an act() scope.
+     */
+
+    var IsSomeRendererActing = {
+      current: false
+    };
+    var ReactSharedInternals = {
+      ReactCurrentDispatcher: ReactCurrentDispatcher,
+      ReactCurrentBatchConfig: ReactCurrentBatchConfig,
+      ReactCurrentOwner: ReactCurrentOwner,
+      IsSomeRendererActing: IsSomeRendererActing,
+      // Used by renderers to avoid bundling object-assign twice in UMD bundles:
+      assign: _assign
+    };
+    {
+      _assign(ReactSharedInternals, {
+        // These should not be included in production.
+        ReactDebugCurrentFrame: ReactDebugCurrentFrame,
+        // Shim for React DOM 16.0.0 which still destructured (but not used) this.
+        // TODO: remove in React 17.0.
+        ReactComponentTreeHook: {}
+      });
+    } // by calls to these methods by a Babel plugin.
+    //
+    // In PROD (or in packages without access to React internals),
+    // they are left as they are instead.
+
+    function warn(format) {
+      {
         for (var _len = arguments.length, args = new Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
           args[_key - 1] = arguments[_key];
         }
 
-        var argIndex = 0;
-        var message = 'Warning: ' + format.replace(/%s/g, function () {
-          return args[argIndex++];
-        });
-
-        if (typeof console !== 'undefined') {
-          console.warn(message);
-        }
-
-        try {
-          // --- Welcome to debugging React ---
-          // This error was thrown as a convenience so that you can use this stack
-          // to find the callsite that caused this warning to fire.
-          throw new Error(message);
-        } catch (x) {}
-      };
-
-      lowPriorityWarningWithoutStack = function (condition, format) {
-        if (format === undefined) {
-          throw new Error('`lowPriorityWarningWithoutStack(condition, format, ...args)` requires a warning ' + 'message argument');
-        }
-
-        if (!condition) {
-          for (var _len2 = arguments.length, args = new Array(_len2 > 2 ? _len2 - 2 : 0), _key2 = 2; _key2 < _len2; _key2++) {
-            args[_key2 - 2] = arguments[_key2];
-          }
-
-          printWarning.apply(void 0, [format].concat(args));
-        }
-      };
+        printWarning('warn', format, args);
+      }
     }
-    var lowPriorityWarningWithoutStack$1 = lowPriorityWarningWithoutStack;
-    /**
-     * Similar to invariant but only logs a warning if the condition is not met.
-     * This can be used to log issues in development environments in critical
-     * paths. Removing the logging code for production environments will keep the
-     * same logic and follow the same code paths.
-     */
 
-    var warningWithoutStack = function () {};
-
-    {
-      warningWithoutStack = function (condition, format) {
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
+    function error(format) {
+      {
+        for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+          args[_key2 - 1] = arguments[_key2];
         }
 
-        if (format === undefined) {
-          throw new Error('`warningWithoutStack(condition, format, ...args)` requires a warning ' + 'message argument');
+        printWarning('error', format, args);
+      }
+    }
+
+    function printWarning(level, format, args) {
+      // When changing this logic, you might want to also
+      // update consoleWithStackDev.www.js as well.
+      {
+        var hasExistingStack = args.length > 0 && typeof args[args.length - 1] === 'string' && args[args.length - 1].indexOf('\n    in') === 0;
+
+        if (!hasExistingStack) {
+          var ReactDebugCurrentFrame = ReactSharedInternals.ReactDebugCurrentFrame;
+          var stack = ReactDebugCurrentFrame.getStackAddendum();
+
+          if (stack !== '') {
+            format += '%s';
+            args = args.concat([stack]);
+          }
         }
 
-        if (args.length > 8) {
-          // Check before the condition to catch violations early.
-          throw new Error('warningWithoutStack() currently supports at most 8 arguments.');
-        }
+        var argsWithFormat = args.map(function (item) {
+          return '' + item;
+        }); // Careful: RN currently depends on this prefix
 
-        if (condition) {
-          return;
-        }
+        argsWithFormat.unshift('Warning: ' + format); // We intentionally don't use spread (or .apply) directly because it
+        // breaks IE9: https://github.com/facebook/react/issues/13610
+        // eslint-disable-next-line react-internal/no-production-logging
 
-        if (typeof console !== 'undefined') {
-          var argsWithFormat = args.map(function (item) {
-            return '' + item;
-          });
-          argsWithFormat.unshift('Warning: ' + format); // We intentionally don't use spread (or .apply) directly because it
-          // breaks IE9: https://github.com/facebook/react/issues/13610
-
-          Function.prototype.apply.call(console.error, console, argsWithFormat);
-        }
+        Function.prototype.apply.call(console[level], console, argsWithFormat);
 
         try {
           // --- Welcome to debugging React ---
@@ -506,9 +647,9 @@ if ("development" !== "production") {
           });
           throw new Error(message);
         } catch (x) {}
-      };
+      }
     }
-    var warningWithoutStack$1 = warningWithoutStack;
+
     var didWarnStateUpdateForUnmountedComponent = {};
 
     function warnNoop(publicInstance, callerName) {
@@ -521,7 +662,7 @@ if ("development" !== "production") {
           return;
         }
 
-        warningWithoutStack$1(false, "Can't call %s on a component that is not yet mounted. " + 'This is a no-op, but it might indicate a bug in your application. ' + 'Instead, assign to `this.state` directly or define a `state = {};` ' + 'class property with the desired state in the %s component.', callerName, componentName);
+        error("Can't call %s on a component that is not yet mounted. " + 'This is a no-op, but it might indicate a bug in your application. ' + 'Instead, assign to `this.state` directly or define a `state = {};` ' + 'class property with the desired state in the %s component.', callerName, componentName);
         didWarnStateUpdateForUnmountedComponent[warningKey] = true;
       }
     }
@@ -640,13 +781,11 @@ if ("development" !== "production") {
      */
 
     Component.prototype.setState = function (partialState, callback) {
-      (function () {
-        if (!(typeof partialState === 'object' || typeof partialState === 'function' || partialState == null)) {
-          {
-            throw ReactError(Error("setState(...): takes an object of state variables to update or a function which returns an object of state variables."));
-          }
+      if (!(typeof partialState === 'object' || typeof partialState === 'function' || partialState == null)) {
+        {
+          throw Error("setState(...): takes an object of state variables to update or a function which returns an object of state variables.");
         }
-      })();
+      }
 
       this.updater.enqueueSetState(this, partialState, callback, 'setState');
     };
@@ -685,7 +824,7 @@ if ("development" !== "production") {
       var defineDeprecationWarning = function (methodName, info) {
         Object.defineProperty(Component.prototype, methodName, {
           get: function () {
-            lowPriorityWarningWithoutStack$1(false, '%s(...) is deprecated in plain JavaScript React classes. %s', info[0], info[1]);
+            warn('%s(...) is deprecated in plain JavaScript React classes. %s', info[0], info[1]);
             return undefined;
           }
         });
@@ -729,235 +868,7 @@ if ("development" !== "production") {
       }
       return refObject;
     }
-    /**
-     * Keeps track of the current dispatcher.
-     */
 
-
-    var ReactCurrentDispatcher = {
-      /**
-       * @internal
-       * @type {ReactComponent}
-       */
-      current: null
-    };
-    /**
-     * Keeps track of the current batch's configuration such as how long an update
-     * should suspend for if it needs to.
-     */
-
-    var ReactCurrentBatchConfig = {
-      suspense: null
-    };
-    /**
-     * Keeps track of the current owner.
-     *
-     * The current owner is the component who should own any components that are
-     * currently being constructed.
-     */
-
-    var ReactCurrentOwner = {
-      /**
-       * @internal
-       * @type {ReactComponent}
-       */
-      current: null
-    };
-    var BEFORE_SLASH_RE = /^(.*)[\\\/]/;
-
-    var describeComponentFrame = function (name, source, ownerName) {
-      var sourceInfo = '';
-
-      if (source) {
-        var path = source.fileName;
-        var fileName = path.replace(BEFORE_SLASH_RE, '');
-        {
-          // In DEV, include code for a common special case:
-          // prefer "folder/index.js" instead of just "index.js".
-          if (/^index\./.test(fileName)) {
-            var match = path.match(BEFORE_SLASH_RE);
-
-            if (match) {
-              var pathBeforeSlash = match[1];
-
-              if (pathBeforeSlash) {
-                var folderName = pathBeforeSlash.replace(BEFORE_SLASH_RE, '');
-                fileName = folderName + '/' + fileName;
-              }
-            }
-          }
-        }
-        sourceInfo = ' (at ' + fileName + ':' + source.lineNumber + ')';
-      } else if (ownerName) {
-        sourceInfo = ' (created by ' + ownerName + ')';
-      }
-
-      return '\n    in ' + (name || 'Unknown') + sourceInfo;
-    };
-
-    var Resolved = 1;
-
-    function refineResolvedLazyComponent(lazyComponent) {
-      return lazyComponent._status === Resolved ? lazyComponent._result : null;
-    }
-
-    function getWrappedName(outerType, innerType, wrapperName) {
-      var functionName = innerType.displayName || innerType.name || '';
-      return outerType.displayName || (functionName !== '' ? wrapperName + "(" + functionName + ")" : wrapperName);
-    }
-
-    function getComponentName(type) {
-      if (type == null) {
-        // Host root, text node or just invalid type.
-        return null;
-      }
-
-      {
-        if (typeof type.tag === 'number') {
-          warningWithoutStack$1(false, 'Received an unexpected object in getComponentName(). ' + 'This is likely a bug in React. Please file an issue.');
-        }
-      }
-
-      if (typeof type === 'function') {
-        return type.displayName || type.name || null;
-      }
-
-      if (typeof type === 'string') {
-        return type;
-      }
-
-      switch (type) {
-        case REACT_FRAGMENT_TYPE:
-          return 'Fragment';
-
-        case REACT_PORTAL_TYPE:
-          return 'Portal';
-
-        case REACT_PROFILER_TYPE:
-          return "Profiler";
-
-        case REACT_STRICT_MODE_TYPE:
-          return 'StrictMode';
-
-        case REACT_SUSPENSE_TYPE:
-          return 'Suspense';
-
-        case REACT_SUSPENSE_LIST_TYPE:
-          return 'SuspenseList';
-      }
-
-      if (typeof type === 'object') {
-        switch (type.$$typeof) {
-          case REACT_CONTEXT_TYPE:
-            return 'Context.Consumer';
-
-          case REACT_PROVIDER_TYPE:
-            return 'Context.Provider';
-
-          case REACT_FORWARD_REF_TYPE:
-            return getWrappedName(type, type.render, 'ForwardRef');
-
-          case REACT_MEMO_TYPE:
-            return getComponentName(type.type);
-
-          case REACT_LAZY_TYPE:
-            {
-              var thenable = type;
-              var resolvedThenable = refineResolvedLazyComponent(thenable);
-
-              if (resolvedThenable) {
-                return getComponentName(resolvedThenable);
-              }
-
-              break;
-            }
-        }
-      }
-
-      return null;
-    }
-
-    var ReactDebugCurrentFrame = {};
-    var currentlyValidatingElement = null;
-
-    function setCurrentlyValidatingElement(element) {
-      {
-        currentlyValidatingElement = element;
-      }
-    }
-
-    {
-      // Stack implementation injected by the current renderer.
-      ReactDebugCurrentFrame.getCurrentStack = null;
-
-      ReactDebugCurrentFrame.getStackAddendum = function () {
-        var stack = ''; // Add an extra top frame while an element is being validated
-
-        if (currentlyValidatingElement) {
-          var name = getComponentName(currentlyValidatingElement.type);
-          var owner = currentlyValidatingElement._owner;
-          stack += describeComponentFrame(name, currentlyValidatingElement._source, owner && getComponentName(owner.type));
-        } // Delegate to the injected renderer-specific implementation
-
-
-        var impl = ReactDebugCurrentFrame.getCurrentStack;
-
-        if (impl) {
-          stack += impl() || '';
-        }
-
-        return stack;
-      };
-    }
-    /**
-     * Used by act() to track whether you're inside an act() scope.
-     */
-
-    var IsSomeRendererActing = {
-      current: false
-    };
-    var ReactSharedInternals = {
-      ReactCurrentDispatcher: ReactCurrentDispatcher,
-      ReactCurrentBatchConfig: ReactCurrentBatchConfig,
-      ReactCurrentOwner: ReactCurrentOwner,
-      IsSomeRendererActing: IsSomeRendererActing,
-      // Used by renderers to avoid bundling object-assign twice in UMD bundles:
-      assign: _assign
-    };
-    {
-      _assign(ReactSharedInternals, {
-        // These should not be included in production.
-        ReactDebugCurrentFrame: ReactDebugCurrentFrame,
-        // Shim for React DOM 16.0.0 which still destructured (but not used) this.
-        // TODO: remove in React 17.0.
-        ReactComponentTreeHook: {}
-      });
-    }
-    /**
-     * Similar to invariant but only logs a warning if the condition is not met.
-     * This can be used to log issues in development environments in critical
-     * paths. Removing the logging code for production environments will keep the
-     * same logic and follow the same code paths.
-     */
-
-    var warning = warningWithoutStack$1;
-    {
-      warning = function (condition, format) {
-        if (condition) {
-          return;
-        }
-
-        var ReactDebugCurrentFrame = ReactSharedInternals.ReactDebugCurrentFrame;
-        var stack = ReactDebugCurrentFrame.getStackAddendum(); // eslint-disable-next-line react-internal/warning-and-invariant-args
-
-        for (var _len = arguments.length, args = new Array(_len > 2 ? _len - 2 : 0), _key = 2; _key < _len; _key++) {
-          args[_key - 2] = arguments[_key];
-        }
-
-        warningWithoutStack$1.apply(void 0, [false, format + '%s'].concat(args, [stack]));
-      };
-    }
-    var warning$1 = warning;
     var hasOwnProperty = Object.prototype.hasOwnProperty;
     var RESERVED_PROPS = {
       key: true,
@@ -965,8 +876,10 @@ if ("development" !== "production") {
       __self: true,
       __source: true
     };
-    var specialPropKeyWarningShown;
-    var specialPropRefWarningShown;
+    var specialPropKeyWarningShown, specialPropRefWarningShown, didWarnAboutStringRefs;
+    {
+      didWarnAboutStringRefs = {};
+    }
 
     function hasValidRef(config) {
       {
@@ -996,9 +909,11 @@ if ("development" !== "production") {
 
     function defineKeyPropWarningGetter(props, displayName) {
       var warnAboutAccessingKey = function () {
-        if (!specialPropKeyWarningShown) {
-          specialPropKeyWarningShown = true;
-          warningWithoutStack$1(false, '%s: `key` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://fb.me/react-special-props)', displayName);
+        {
+          if (!specialPropKeyWarningShown) {
+            specialPropKeyWarningShown = true;
+            error('%s: `key` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://fb.me/react-special-props)', displayName);
+          }
         }
       };
 
@@ -1011,9 +926,11 @@ if ("development" !== "production") {
 
     function defineRefPropWarningGetter(props, displayName) {
       var warnAboutAccessingRef = function () {
-        if (!specialPropRefWarningShown) {
-          specialPropRefWarningShown = true;
-          warningWithoutStack$1(false, '%s: `ref` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://fb.me/react-special-props)', displayName);
+        {
+          if (!specialPropRefWarningShown) {
+            specialPropRefWarningShown = true;
+            error('%s: `ref` is not a prop. Trying to access it will result ' + 'in `undefined` being returned. If you need to access the same ' + 'value within the child component, you should pass it as a different ' + 'prop. (https://fb.me/react-special-props)', displayName);
+          }
         }
       };
 
@@ -1023,10 +940,23 @@ if ("development" !== "production") {
         configurable: true
       });
     }
+
+    function warnIfStringRefCannotBeAutoConverted(config) {
+      {
+        if (typeof config.ref === 'string' && ReactCurrentOwner.current && config.__self && ReactCurrentOwner.current.stateNode !== config.__self) {
+          var componentName = getComponentName(ReactCurrentOwner.current.type);
+
+          if (!didWarnAboutStringRefs[componentName]) {
+            error('Component "%s" contains the string ref "%s". ' + 'Support for string refs will be removed in a future major release. ' + 'This case cannot be automatically converted to an arrow function. ' + 'We ask you to manually fix this case by using useRef() or createRef() instead. ' + 'Learn more about using refs safely here: ' + 'https://fb.me/react-strict-mode-string-ref', getComponentName(ReactCurrentOwner.current.type), config.ref);
+            didWarnAboutStringRefs[componentName] = true;
+          }
+        }
+      }
+    }
     /**
      * Factory method to create a new React element. This no longer adheres to
-     * the class pattern, so do not use new to call it. Also, no instanceof check
-     * will work. Instead test $$typeof field against Symbol.for('react.element') to check
+     * the class pattern, so do not use new to call it. Also, instanceof check
+     * will not work. Instead test $$typeof field against Symbol.for('react.element') to check
      * if something is a React Element.
      *
      * @param {*} type
@@ -1097,77 +1027,6 @@ if ("development" !== "production") {
       return element;
     };
     /**
-     * https://github.com/reactjs/rfcs/pull/107
-     * @param {*} type
-     * @param {object} props
-     * @param {string} key
-     */
-
-    /**
-     * https://github.com/reactjs/rfcs/pull/107
-     * @param {*} type
-     * @param {object} props
-     * @param {string} key
-     */
-
-
-    function jsxDEV(type, config, maybeKey, source, self) {
-      var propName; // Reserved names are extracted
-
-      var props = {};
-      var key = null;
-      var ref = null; // Currently, key can be spread in as a prop. This causes a potential
-      // issue if key is also explicitly declared (ie. <div {...props} key="Hi" />
-      // or <div key="Hi" {...props} /> ). We want to deprecate key spread,
-      // but as an intermediary step, we will use jsxDEV for everything except
-      // <div {...props} key="Hi" />, because we aren't currently able to tell if
-      // key is explicitly declared to be undefined or not.
-
-      if (maybeKey !== undefined) {
-        key = '' + maybeKey;
-      }
-
-      if (hasValidKey(config)) {
-        key = '' + config.key;
-      }
-
-      if (hasValidRef(config)) {
-        ref = config.ref;
-      } // Remaining properties are added to a new props object
-
-
-      for (propName in config) {
-        if (hasOwnProperty.call(config, propName) && !RESERVED_PROPS.hasOwnProperty(propName)) {
-          props[propName] = config[propName];
-        }
-      } // Resolve default props
-
-
-      if (type && type.defaultProps) {
-        var defaultProps = type.defaultProps;
-
-        for (propName in defaultProps) {
-          if (props[propName] === undefined) {
-            props[propName] = defaultProps[propName];
-          }
-        }
-      }
-
-      if (key || ref) {
-        var displayName = typeof type === 'function' ? type.displayName || type.name || 'Unknown' : type;
-
-        if (key) {
-          defineKeyPropWarningGetter(props, displayName);
-        }
-
-        if (ref) {
-          defineRefPropWarningGetter(props, displayName);
-        }
-      }
-
-      return ReactElement(type, key, ref, self, source, ReactCurrentOwner.current, props);
-    }
-    /**
      * Create and return a new ReactElement of the given type.
      * See https://reactjs.org/docs/react-api.html#createelement
      */
@@ -1185,6 +1044,9 @@ if ("development" !== "production") {
       if (config != null) {
         if (hasValidRef(config)) {
           ref = config.ref;
+          {
+            warnIfStringRefCannotBeAutoConverted(config);
+          }
         }
 
         if (hasValidKey(config)) {
@@ -1248,11 +1110,6 @@ if ("development" !== "production") {
       }
       return ReactElement(type, key, ref, self, source, ReactCurrentOwner.current, props);
     }
-    /**
-     * Return a function that produces ReactElements of a given type.
-     * See https://reactjs.org/docs/react-api.html#createfactory
-     */
-
 
     function cloneAndReplaceKey(oldElement, newKey) {
       var newElement = ReactElement(oldElement.type, newKey, oldElement.ref, oldElement._self, oldElement._source, oldElement._owner, oldElement.props);
@@ -1265,13 +1122,11 @@ if ("development" !== "production") {
 
 
     function cloneElement(element, config, children) {
-      (function () {
-        if (!!(element === null || element === undefined)) {
-          {
-            throw ReactError(Error("React.cloneElement(...): The argument must be a React element, but you passed " + element + "."));
-          }
+      if (!!(element === null || element === undefined)) {
+        {
+          throw Error("React.cloneElement(...): The argument must be a React element, but you passed " + element + ".");
         }
-      })();
+      }
 
       var propName; // Original props are copied
 
@@ -1482,7 +1337,10 @@ if ("development" !== "production") {
           {
             // Warn about using Maps as children
             if (iteratorFn === children.entries) {
-              !didWarnAboutMaps ? warning$1(false, 'Using Maps as children is unsupported and will likely yield ' + 'unexpected results. Convert it to a sequence/iterable of keyed ' + 'ReactElements instead.') : void 0;
+              if (!didWarnAboutMaps) {
+                warn('Using Maps as children is deprecated and will be removed in ' + 'a future major release. Consider converting children to ' + 'an array of keyed ReactElements instead.');
+              }
+
               didWarnAboutMaps = true;
             }
           }
@@ -1501,14 +1359,11 @@ if ("development" !== "production") {
             addendum = ' If you meant to render a collection of children, use an array ' + 'instead.' + ReactDebugCurrentFrame.getStackAddendum();
           }
           var childrenString = '' + children;
-
-          (function () {
+          {
             {
-              {
-                throw ReactError(Error("Objects are not valid as a React child (found: " + (childrenString === '[object Object]' ? 'object with keys {' + Object.keys(children).join(', ') + '}' : childrenString) + ")." + addendum));
-              }
+              throw Error("Objects are not valid as a React child (found: " + (childrenString === '[object Object]' ? 'object with keys {' + Object.keys(children).join(', ') + '}' : childrenString) + ")." + addendum);
             }
-          })();
+          }
         }
       }
 
@@ -1694,13 +1549,11 @@ if ("development" !== "production") {
 
 
     function onlyChild(children) {
-      (function () {
-        if (!isValidElement(children)) {
-          {
-            throw ReactError(Error("React.Children.only expected to receive a single React element child."));
-          }
+      if (!isValidElement(children)) {
+        {
+          throw Error("React.Children.only expected to receive a single React element child.");
         }
-      })();
+      }
 
       return children;
     }
@@ -1710,7 +1563,9 @@ if ("development" !== "production") {
         calculateChangedBits = null;
       } else {
         {
-          !(calculateChangedBits === null || typeof calculateChangedBits === 'function') ? warningWithoutStack$1(false, 'createContext: Expected the optional second argument to be a ' + 'function. Instead received: %s', calculateChangedBits) : void 0;
+          if (calculateChangedBits !== null && typeof calculateChangedBits !== 'function') {
+            error('createContext: Expected the optional second argument to be a ' + 'function. Instead received: %s', calculateChangedBits);
+          }
         }
       }
 
@@ -1752,7 +1607,7 @@ if ("development" !== "production") {
             get: function () {
               if (!hasWarnedAboutUsingConsumerProvider) {
                 hasWarnedAboutUsingConsumerProvider = true;
-                warning$1(false, 'Rendering <Context.Consumer.Provider> is not supported and will be removed in ' + 'a future major release. Did you mean to render <Context.Provider> instead?');
+                error('Rendering <Context.Consumer.Provider> is not supported and will be removed in ' + 'a future major release. Did you mean to render <Context.Provider> instead?');
               }
 
               return context.Provider;
@@ -1789,7 +1644,7 @@ if ("development" !== "production") {
             get: function () {
               if (!hasWarnedAboutUsingNestedContextConsumers) {
                 hasWarnedAboutUsingNestedContextConsumers = true;
-                warning$1(false, 'Rendering <Context.Consumer.Consumer> is not supported and will be removed in ' + 'a future major release. Did you mean to render <Context.Consumer> instead?');
+                error('Rendering <Context.Consumer.Consumer> is not supported and will be removed in ' + 'a future major release. Did you mean to render <Context.Consumer> instead?');
               }
 
               return context.Consumer;
@@ -1825,7 +1680,7 @@ if ("development" !== "production") {
               return defaultProps;
             },
             set: function (newDefaultProps) {
-              warning$1(false, 'React.lazy(...): It is not supported to assign `defaultProps` to ' + 'a lazy component import. Either specify them where the component ' + 'is defined, or create a wrapping component around it.');
+              error('React.lazy(...): It is not supported to assign `defaultProps` to ' + 'a lazy component import. Either specify them where the component ' + 'is defined, or create a wrapping component around it.');
               defaultProps = newDefaultProps; // Match production behavior more closely:
 
               Object.defineProperty(lazyType, 'defaultProps', {
@@ -1839,7 +1694,7 @@ if ("development" !== "production") {
               return propTypes;
             },
             set: function (newPropTypes) {
-              warning$1(false, 'React.lazy(...): It is not supported to assign `propTypes` to ' + 'a lazy component import. Either specify them where the component ' + 'is defined, or create a wrapping component around it.');
+              error('React.lazy(...): It is not supported to assign `propTypes` to ' + 'a lazy component import. Either specify them where the component ' + 'is defined, or create a wrapping component around it.');
               propTypes = newPropTypes; // Match production behavior more closely:
 
               Object.defineProperty(lazyType, 'propTypes', {
@@ -1855,16 +1710,19 @@ if ("development" !== "production") {
     function forwardRef(render) {
       {
         if (render != null && render.$$typeof === REACT_MEMO_TYPE) {
-          warningWithoutStack$1(false, 'forwardRef requires a render function but received a `memo` ' + 'component. Instead of forwardRef(memo(...)), use ' + 'memo(forwardRef(...)).');
+          error('forwardRef requires a render function but received a `memo` ' + 'component. Instead of forwardRef(memo(...)), use ' + 'memo(forwardRef(...)).');
         } else if (typeof render !== 'function') {
-          warningWithoutStack$1(false, 'forwardRef requires a render function but was given %s.', render === null ? 'null' : typeof render);
+          error('forwardRef requires a render function but was given %s.', render === null ? 'null' : typeof render);
         } else {
-          !( // Do not warn for 0 arguments because it could be due to usage of the 'arguments' object
-          render.length === 0 || render.length === 2) ? warningWithoutStack$1(false, 'forwardRef render functions accept exactly two parameters: props and ref. %s', render.length === 1 ? 'Did you forget to use the ref parameter?' : 'Any additional parameter will be undefined.') : void 0;
+          if (render.length !== 0 && render.length !== 2) {
+            error('forwardRef render functions accept exactly two parameters: props and ref. %s', render.length === 1 ? 'Did you forget to use the ref parameter?' : 'Any additional parameter will be undefined.');
+          }
         }
 
         if (render != null) {
-          !(render.defaultProps == null && render.propTypes == null) ? warningWithoutStack$1(false, 'forwardRef render functions do not support propTypes or defaultProps. ' + 'Did you accidentally pass a React component?') : void 0;
+          if (render.defaultProps != null || render.propTypes != null) {
+            error('forwardRef render functions do not support propTypes or defaultProps. ' + 'Did you accidentally pass a React component?');
+          }
         }
       }
       return {
@@ -1875,13 +1733,13 @@ if ("development" !== "production") {
 
     function isValidElementType(type) {
       return typeof type === 'string' || typeof type === 'function' || // Note: its typeof might be other than 'symbol' or 'number' if it's a polyfill.
-      type === REACT_FRAGMENT_TYPE || type === REACT_CONCURRENT_MODE_TYPE || type === REACT_PROFILER_TYPE || type === REACT_STRICT_MODE_TYPE || type === REACT_SUSPENSE_TYPE || type === REACT_SUSPENSE_LIST_TYPE || typeof type === 'object' && type !== null && (type.$$typeof === REACT_LAZY_TYPE || type.$$typeof === REACT_MEMO_TYPE || type.$$typeof === REACT_PROVIDER_TYPE || type.$$typeof === REACT_CONTEXT_TYPE || type.$$typeof === REACT_FORWARD_REF_TYPE || type.$$typeof === REACT_FUNDAMENTAL_TYPE || type.$$typeof === REACT_RESPONDER_TYPE || type.$$typeof === REACT_SCOPE_TYPE);
+      type === REACT_FRAGMENT_TYPE || type === REACT_CONCURRENT_MODE_TYPE || type === REACT_PROFILER_TYPE || type === REACT_STRICT_MODE_TYPE || type === REACT_SUSPENSE_TYPE || type === REACT_SUSPENSE_LIST_TYPE || typeof type === 'object' && type !== null && (type.$$typeof === REACT_LAZY_TYPE || type.$$typeof === REACT_MEMO_TYPE || type.$$typeof === REACT_PROVIDER_TYPE || type.$$typeof === REACT_CONTEXT_TYPE || type.$$typeof === REACT_FORWARD_REF_TYPE || type.$$typeof === REACT_FUNDAMENTAL_TYPE || type.$$typeof === REACT_RESPONDER_TYPE || type.$$typeof === REACT_SCOPE_TYPE || type.$$typeof === REACT_BLOCK_TYPE);
     }
 
     function memo(type, compare) {
       {
         if (!isValidElementType(type)) {
-          warningWithoutStack$1(false, 'memo: The first argument must be a component. Instead ' + 'received: %s', type === null ? 'null' : typeof type);
+          error('memo: The first argument must be a component. Instead ' + 'received: %s', type === null ? 'null' : typeof type);
         }
       }
       return {
@@ -1894,13 +1752,11 @@ if ("development" !== "production") {
     function resolveDispatcher() {
       var dispatcher = ReactCurrentDispatcher.current;
 
-      (function () {
-        if (!(dispatcher !== null)) {
-          {
-            throw ReactError(Error("Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:\n1. You might have mismatching versions of React and the renderer (such as React DOM)\n2. You might be breaking the Rules of Hooks\n3. You might have more than one copy of React in the same app\nSee https://fb.me/react-invalid-hook-call for tips about how to debug and fix this problem."));
-          }
+      if (!(dispatcher !== null)) {
+        {
+          throw Error("Invalid hook call. Hooks can only be called inside of the body of a function component. This could happen for one of the following reasons:\n1. You might have mismatching versions of React and the renderer (such as React DOM)\n2. You might be breaking the Rules of Hooks\n3. You might have more than one copy of React in the same app\nSee https://fb.me/react-invalid-hook-call for tips about how to debug and fix this problem.");
         }
-      })();
+      }
 
       return dispatcher;
     }
@@ -1908,16 +1764,19 @@ if ("development" !== "production") {
     function useContext(Context, unstable_observedBits) {
       var dispatcher = resolveDispatcher();
       {
-        !(unstable_observedBits === undefined) ? warning$1(false, 'useContext() second argument is reserved for future ' + 'use in React. Passing it is not supported. ' + 'You passed: %s.%s', unstable_observedBits, typeof unstable_observedBits === 'number' && Array.isArray(arguments[2]) ? '\n\nDid you call array.map(useContext)? ' + 'Calling Hooks inside a loop is not supported. ' + 'Learn more at https://fb.me/rules-of-hooks' : '') : void 0; // TODO: add a more generic warning for invalid values.
+        if (unstable_observedBits !== undefined) {
+          error('useContext() second argument is reserved for future ' + 'use in React. Passing it is not supported. ' + 'You passed: %s.%s', unstable_observedBits, typeof unstable_observedBits === 'number' && Array.isArray(arguments[2]) ? '\n\nDid you call array.map(useContext)? ' + 'Calling Hooks inside a loop is not supported. ' + 'Learn more at https://fb.me/rules-of-hooks' : '');
+        } // TODO: add a more generic warning for invalid values.
+
 
         if (Context._context !== undefined) {
           var realContext = Context._context; // Don't deduplicate because this legitimately causes bugs
           // and nobody should be using this in existing code.
 
           if (realContext.Consumer === Context) {
-            warning$1(false, 'Calling useContext(Context.Consumer) is not supported, may cause bugs, and will be ' + 'removed in a future major release. Did you mean to call useContext(Context) instead?');
+            error('Calling useContext(Context.Consumer) is not supported, may cause bugs, and will be ' + 'removed in a future major release. Did you mean to call useContext(Context) instead?');
           } else if (realContext.Provider === Context) {
-            warning$1(false, 'Calling useContext(Context.Provider) is not supported. ' + 'Did you mean to call useContext(Context) instead?');
+            error('Calling useContext(Context.Provider) is not supported. ' + 'Did you mean to call useContext(Context) instead?');
           }
         }
       }
@@ -1939,29 +1798,29 @@ if ("development" !== "production") {
       return dispatcher.useRef(initialValue);
     }
 
-    function useEffect(create, inputs) {
+    function useEffect(create, deps) {
       var dispatcher = resolveDispatcher();
-      return dispatcher.useEffect(create, inputs);
+      return dispatcher.useEffect(create, deps);
     }
 
-    function useLayoutEffect(create, inputs) {
+    function useLayoutEffect(create, deps) {
       var dispatcher = resolveDispatcher();
-      return dispatcher.useLayoutEffect(create, inputs);
+      return dispatcher.useLayoutEffect(create, deps);
     }
 
-    function useCallback(callback, inputs) {
+    function useCallback(callback, deps) {
       var dispatcher = resolveDispatcher();
-      return dispatcher.useCallback(callback, inputs);
+      return dispatcher.useCallback(callback, deps);
     }
 
-    function useMemo(create, inputs) {
+    function useMemo(create, deps) {
       var dispatcher = resolveDispatcher();
-      return dispatcher.useMemo(create, inputs);
+      return dispatcher.useMemo(create, deps);
     }
 
-    function useImperativeHandle(ref, create, inputs) {
+    function useImperativeHandle(ref, create, deps) {
       var dispatcher = resolveDispatcher();
-      return dispatcher.useImperativeHandle(ref, create, inputs);
+      return dispatcher.useImperativeHandle(ref, create, deps);
     }
 
     function useDebugValue(value, formatterFn) {
@@ -1971,42 +1830,10 @@ if ("development" !== "production") {
       }
     }
 
-    var emptyObject$1 = {};
-
-    function useResponder(responder, listenerProps) {
-      var dispatcher = resolveDispatcher();
-      {
-        if (responder == null || responder.$$typeof !== REACT_RESPONDER_TYPE) {
-          warning$1(false, 'useResponder: invalid first argument. Expected an event responder, but instead got %s', responder);
-          return;
-        }
-      }
-      return dispatcher.useResponder(responder, listenerProps || emptyObject$1);
-    }
-
-    function withSuspenseConfig(scope, config) {
-      var previousConfig = ReactCurrentBatchConfig.suspense;
-      ReactCurrentBatchConfig.suspense = config === undefined ? null : config;
-
-      try {
-        scope();
-      } finally {
-        ReactCurrentBatchConfig.suspense = previousConfig;
-      }
-    }
-    /**
-     * ReactElementValidator provides a wrapper around a element factory
-     * which validates the props passed to the element. This is intended to be
-     * used only in DEV and could be replaced by a static type checker for languages
-     * that support it.
-     */
-
-
     var propTypesMisspellWarningShown;
     {
       propTypesMisspellWarningShown = false;
     }
-    var hasOwnProperty$1 = Object.prototype.hasOwnProperty;
 
     function getDeclarationErrorAddendum() {
       if (ReactCurrentOwner.current) {
@@ -2097,7 +1924,7 @@ if ("development" !== "production") {
 
       setCurrentlyValidatingElement(element);
       {
-        warning$1(false, 'Each child in a list should have a unique "key" prop.' + '%s%s See https://fb.me/react-warning-keys for more information.', currentComponentErrorInfo, childOwner);
+        error('Each child in a list should have a unique "key" prop.' + '%s%s See https://fb.me/react-warning-keys for more information.', currentComponentErrorInfo, childOwner);
       }
       setCurrentlyValidatingElement(null);
     }
@@ -2158,36 +1985,38 @@ if ("development" !== "production") {
 
 
     function validatePropTypes(element) {
-      var type = element.type;
+      {
+        var type = element.type;
 
-      if (type === null || type === undefined || typeof type === 'string') {
-        return;
-      }
+        if (type === null || type === undefined || typeof type === 'string') {
+          return;
+        }
 
-      var name = getComponentName(type);
-      var propTypes;
+        var name = getComponentName(type);
+        var propTypes;
 
-      if (typeof type === 'function') {
-        propTypes = type.propTypes;
-      } else if (typeof type === 'object' && (type.$$typeof === REACT_FORWARD_REF_TYPE || // Note: Memo only checks outer props here.
-      // Inner props are checked in the reconciler.
-      type.$$typeof === REACT_MEMO_TYPE)) {
-        propTypes = type.propTypes;
-      } else {
-        return;
-      }
+        if (typeof type === 'function') {
+          propTypes = type.propTypes;
+        } else if (typeof type === 'object' && (type.$$typeof === REACT_FORWARD_REF_TYPE || // Note: Memo only checks outer props here.
+        // Inner props are checked in the reconciler.
+        type.$$typeof === REACT_MEMO_TYPE)) {
+          propTypes = type.propTypes;
+        } else {
+          return;
+        }
 
-      if (propTypes) {
-        setCurrentlyValidatingElement(element);
-        checkPropTypes(propTypes, element.props, 'prop', name, ReactDebugCurrentFrame.getStackAddendum);
-        setCurrentlyValidatingElement(null);
-      } else if (type.PropTypes !== undefined && !propTypesMisspellWarningShown) {
-        propTypesMisspellWarningShown = true;
-        warningWithoutStack$1(false, 'Component %s declared `PropTypes` instead of `propTypes`. Did you misspell the property assignment?', name || 'Unknown');
-      }
+        if (propTypes) {
+          setCurrentlyValidatingElement(element);
+          checkPropTypes(propTypes, element.props, 'prop', name, ReactDebugCurrentFrame.getStackAddendum);
+          setCurrentlyValidatingElement(null);
+        } else if (type.PropTypes !== undefined && !propTypesMisspellWarningShown) {
+          propTypesMisspellWarningShown = true;
+          error('Component %s declared `PropTypes` instead of `propTypes`. Did you misspell the property assignment?', name || 'Unknown');
+        }
 
-      if (typeof type.getDefaultProps === 'function') {
-        !type.getDefaultProps.isReactClassApproved ? warningWithoutStack$1(false, 'getDefaultProps is only used on classic React.createClass ' + 'definitions. Use a static property named `defaultProps` instead.') : void 0;
+        if (typeof type.getDefaultProps === 'function' && !type.getDefaultProps.isReactClassApproved) {
+          error('getDefaultProps is only used on classic React.createClass ' + 'definitions. Use a static property named `defaultProps` instead.');
+        }
       }
     }
     /**
@@ -2197,117 +2026,25 @@ if ("development" !== "production") {
 
 
     function validateFragmentProps(fragment) {
-      setCurrentlyValidatingElement(fragment);
-      var keys = Object.keys(fragment.props);
+      {
+        setCurrentlyValidatingElement(fragment);
+        var keys = Object.keys(fragment.props);
 
-      for (var i = 0; i < keys.length; i++) {
-        var key = keys[i];
+        for (var i = 0; i < keys.length; i++) {
+          var key = keys[i];
 
-        if (key !== 'children' && key !== 'key') {
-          warning$1(false, 'Invalid prop `%s` supplied to `React.Fragment`. ' + 'React.Fragment can only have `key` and `children` props.', key);
-          break;
-        }
-      }
-
-      if (fragment.ref !== null) {
-        warning$1(false, 'Invalid attribute `ref` supplied to `React.Fragment`.');
-      }
-
-      setCurrentlyValidatingElement(null);
-    }
-
-    function jsxWithValidation(type, props, key, isStaticChildren, source, self) {
-      var validType = isValidElementType(type); // We warn in this case but don't throw. We expect the element creation to
-      // succeed and there will likely be errors in render.
-
-      if (!validType) {
-        var info = '';
-
-        if (type === undefined || typeof type === 'object' && type !== null && Object.keys(type).length === 0) {
-          info += ' You likely forgot to export your component from the file ' + "it's defined in, or you might have mixed up default and named imports.";
-        }
-
-        var sourceInfo = getSourceInfoErrorAddendum(source);
-
-        if (sourceInfo) {
-          info += sourceInfo;
-        } else {
-          info += getDeclarationErrorAddendum();
-        }
-
-        var typeString;
-
-        if (type === null) {
-          typeString = 'null';
-        } else if (Array.isArray(type)) {
-          typeString = 'array';
-        } else if (type !== undefined && type.$$typeof === REACT_ELEMENT_TYPE) {
-          typeString = "<" + (getComponentName(type.type) || 'Unknown') + " />";
-          info = ' Did you accidentally export a JSX literal instead of a component?';
-        } else {
-          typeString = typeof type;
-        }
-
-        warning$1(false, 'React.jsx: type is invalid -- expected a string (for ' + 'built-in components) or a class/function (for composite ' + 'components) but got: %s.%s', typeString, info);
-      }
-
-      var element = jsxDEV(type, props, key, source, self); // The result can be nullish if a mock or a custom function is used.
-      // TODO: Drop this when these are no longer allowed as the type argument.
-
-      if (element == null) {
-        return element;
-      } // Skip key warning if the type isn't valid since our key validation logic
-      // doesn't expect a non-string/function type and can throw confusing errors.
-      // We don't want exception behavior to differ between dev and prod.
-      // (Rendering will throw with a helpful message and as soon as the type is
-      // fixed, the key warnings will appear.)
-
-
-      if (validType) {
-        var children = props.children;
-
-        if (children !== undefined) {
-          if (isStaticChildren) {
-            if (Array.isArray(children)) {
-              for (var i = 0; i < children.length; i++) {
-                validateChildKeys(children[i], type);
-              }
-
-              if (Object.freeze) {
-                Object.freeze(children);
-              }
-            } else {
-              warning$1(false, 'React.jsx: Static children should always be an array. ' + 'You are likely explicitly calling React.jsxs or React.jsxDEV. ' + 'Use the Babel transform instead.');
-            }
-          } else {
-            validateChildKeys(children, type);
+          if (key !== 'children' && key !== 'key') {
+            error('Invalid prop `%s` supplied to `React.Fragment`. ' + 'React.Fragment can only have `key` and `children` props.', key);
+            break;
           }
         }
+
+        if (fragment.ref !== null) {
+          error('Invalid attribute `ref` supplied to `React.Fragment`.');
+        }
+
+        setCurrentlyValidatingElement(null);
       }
-
-      if (hasOwnProperty$1.call(props, 'key')) {
-        warning$1(false, 'React.jsx: Spreading a key to JSX is a deprecated pattern. ' + 'Explicitly pass a key after spreading props in your JSX call. ' + 'E.g. <ComponentName {...props} key={key} />');
-      }
-
-      if (type === REACT_FRAGMENT_TYPE) {
-        validateFragmentProps(element);
-      } else {
-        validatePropTypes(element);
-      }
-
-      return element;
-    } // These two functions exist to still get child warnings in dev
-    // even with the prod transform. This means that jsxDEV is purely
-    // opt-in behavior for better messages but that we won't stop
-    // giving you warnings if you use production apis.
-
-
-    function jsxWithValidationStatic(type, props, key) {
-      return jsxWithValidation(type, props, key, true);
-    }
-
-    function jsxWithValidationDynamic(type, props, key) {
-      return jsxWithValidation(type, props, key, false);
     }
 
     function createElementWithValidation(type, props, children) {
@@ -2342,7 +2079,9 @@ if ("development" !== "production") {
           typeString = typeof type;
         }
 
-        warning$1(false, 'React.createElement: type is invalid -- expected a string (for ' + 'built-in components) or a class/function (for composite ' + 'components) but got: %s.%s', typeString, info);
+        {
+          error('React.createElement: type is invalid -- expected a string (for ' + 'built-in components) or a class/function (for composite ' + 'components) but got: %s.%s', typeString, info);
+        }
       }
 
       var element = createElement.apply(this, arguments); // The result can be nullish if a mock or a custom function is used.
@@ -2372,15 +2111,22 @@ if ("development" !== "production") {
       return element;
     }
 
+    var didWarnAboutDeprecatedCreateFactory = false;
+
     function createFactoryWithValidation(type) {
       var validatedFactory = createElementWithValidation.bind(null, type);
-      validatedFactory.type = type; // Legacy hook: remove it
-
+      validatedFactory.type = type;
       {
+        if (!didWarnAboutDeprecatedCreateFactory) {
+          didWarnAboutDeprecatedCreateFactory = true;
+          warn('React.createFactory() is deprecated and will be removed in ' + 'a future major release. Consider using JSX ' + 'or use React.createElement() directly instead.');
+        } // Legacy hook: remove it
+
+
         Object.defineProperty(validatedFactory, 'type', {
           enumerable: false,
           get: function () {
-            lowPriorityWarningWithoutStack$1(false, 'Factory.type is deprecated. Access the class directly ' + 'before passing it to createFactory.');
+            warn('Factory.type is deprecated. Access the class directly ' + 'before passing it to createFactory.');
             Object.defineProperty(this, 'type', {
               value: type
             });
@@ -2402,10 +2148,7 @@ if ("development" !== "production") {
       return newElement;
     }
 
-    var hasBadMapPolyfill;
     {
-      hasBadMapPolyfill = false;
-
       try {
         var frozenObject = Object.freeze({});
         var testMap = new Map([[frozenObject, null]]);
@@ -2415,188 +2158,46 @@ if ("development" !== "production") {
 
         testMap.set(0, 0);
         testSet.add(0);
-      } catch (e) {
-        // TODO: Consider warning about bad polyfills
-        hasBadMapPolyfill = true;
-      }
+      } catch (e) {}
     }
-
-    function createFundamentalComponent(impl) {
-      // We use responder as a Map key later on. When we have a bad
-      // polyfill, then we can't use it as a key as the polyfill tries
-      // to add a property to the object.
-      if (true && !hasBadMapPolyfill) {
-        Object.freeze(impl);
-      }
-
-      var fundamantalComponent = {
-        $$typeof: REACT_FUNDAMENTAL_TYPE,
-        impl: impl
-      };
-      {
-        Object.freeze(fundamantalComponent);
-      }
-      return fundamantalComponent;
-    }
-
-    function createEventResponder(displayName, responderConfig) {
-      var getInitialState = responderConfig.getInitialState,
-          onEvent = responderConfig.onEvent,
-          onMount = responderConfig.onMount,
-          onUnmount = responderConfig.onUnmount,
-          onRootEvent = responderConfig.onRootEvent,
-          rootEventTypes = responderConfig.rootEventTypes,
-          targetEventTypes = responderConfig.targetEventTypes,
-          targetPortalPropagation = responderConfig.targetPortalPropagation;
-      var eventResponder = {
-        $$typeof: REACT_RESPONDER_TYPE,
-        displayName: displayName,
-        getInitialState: getInitialState || null,
-        onEvent: onEvent || null,
-        onMount: onMount || null,
-        onRootEvent: onRootEvent || null,
-        onUnmount: onUnmount || null,
-        rootEventTypes: rootEventTypes || null,
-        targetEventTypes: targetEventTypes || null,
-        targetPortalPropagation: targetPortalPropagation || false
-      }; // We use responder as a Map key later on. When we have a bad
-      // polyfill, then we can't use it as a key as the polyfill tries
-      // to add a property to the object.
-
-      if (true && !hasBadMapPolyfill) {
-        Object.freeze(eventResponder);
-      }
-
-      return eventResponder;
-    }
-
-    function createScope(fn) {
-      var scopeComponent = {
-        $$typeof: REACT_SCOPE_TYPE,
-        fn: fn
-      };
-      {
-        Object.freeze(scopeComponent);
-      }
-      return scopeComponent;
-    } // Helps identify side effects in begin-phase lifecycle hooks and setState reducers:
-    // In some cases, StrictMode should also double-render lifecycles.
-    // This can be confusing for tests though,
-    // And it can be bad for performance in production.
-    // This feature flag can be used to control the behavior:
-    // To preserve the "Pause on caught exceptions" behavior of the debugger, we
-    // replay the begin phase of a failed component inside invokeGuardedCallback.
-    // Warn about deprecated, async-unsafe lifecycles; relates to RFC #6:
-    // Gather advanced timing metrics for Profiler subtrees.
-    // Trace which interactions trigger each commit.
-    // Only used in www builds.
-    // TODO: true? Here it might just be false.
-    // Only used in www builds.
-    // Only used in www builds.
-    // Disable javascript: URL strings in href for XSS protection.
-    // React Fire: prevent the value and checked attributes from syncing
-    // with their related DOM properties
-    // These APIs will no longer be "unstable" in the upcoming 16.7 release,
-    // Control this behavior with a flag to support 16.6 minor releases in the meanwhile.
-    // See https://github.com/react-native-community/discussions-and-proposals/issues/72 for more information
-    // This is a flag so we can fix warnings in RN core before turning it on
-    // Experimental React Flare event system and event components support.
-
-
-    var enableFlareAPI = false; // Experimental Host Component support.
-
-    var enableFundamentalAPI = false; // Experimental Scope support.
-
-    var enableScopeAPI = false; // New API for JSX transforms to target - https://github.com/reactjs/rfcs/pull/107
-
-    var enableJSXTransformAPI = false; // We will enforce mocking scheduler with scheduler/unstable_mock at some point. (v17?)
-    // Till then, we warn about the missing mock, but still fallback to a sync mode compatible version
-    // For tests, we flush suspense fallbacks in an act scope;
-    // *except* in some of our own tests, where we test incremental loading states.
-    // Changes priority of some events like mousemove to user-blocking priority,
-    // but without making them discrete. The flag exists in case it causes
-    // starvation problems.
-    // Add a callback property to suspense to notify which promises are currently
-    // in the update queue. This allows reporting and tracing of what is causing
-    // the user to see a loading state.
-    // Also allows hydration callbacks to fire when a dehydrated boundary gets
-    // hydrated or deleted.
-    // Part of the simplification of React.createElement so we can eventually move
-    // from React.createElement to React.jsx
-    // https://github.com/reactjs/rfcs/blob/createlement-rfc/text/0000-create-element-changes.md
-
-    var React = {
-      Children: {
-        map: mapChildren,
-        forEach: forEachChildren,
-        count: countChildren,
-        toArray: toArray,
-        only: onlyChild
-      },
-      createRef: createRef,
-      Component: Component,
-      PureComponent: PureComponent,
-      createContext: createContext,
-      forwardRef: forwardRef,
-      lazy: lazy,
-      memo: memo,
-      useCallback: useCallback,
-      useContext: useContext,
-      useEffect: useEffect,
-      useImperativeHandle: useImperativeHandle,
-      useDebugValue: useDebugValue,
-      useLayoutEffect: useLayoutEffect,
-      useMemo: useMemo,
-      useReducer: useReducer,
-      useRef: useRef,
-      useState: useState,
-      Fragment: REACT_FRAGMENT_TYPE,
-      Profiler: REACT_PROFILER_TYPE,
-      StrictMode: REACT_STRICT_MODE_TYPE,
-      Suspense: REACT_SUSPENSE_TYPE,
-      unstable_SuspenseList: REACT_SUSPENSE_LIST_TYPE,
-      createElement: createElementWithValidation,
-      cloneElement: cloneElementWithValidation,
-      createFactory: createFactoryWithValidation,
-      isValidElement: isValidElement,
-      version: ReactVersion,
-      unstable_withSuspenseConfig: withSuspenseConfig,
-      __SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED: ReactSharedInternals
+    var createElement$1 = createElementWithValidation;
+    var cloneElement$1 = cloneElementWithValidation;
+    var createFactory = createFactoryWithValidation;
+    var Children = {
+      map: mapChildren,
+      forEach: forEachChildren,
+      count: countChildren,
+      toArray: toArray,
+      only: onlyChild
     };
-
-    if (enableFlareAPI) {
-      React.unstable_useResponder = useResponder;
-      React.unstable_createResponder = createEventResponder;
-    }
-
-    if (enableFundamentalAPI) {
-      React.unstable_createFundamental = createFundamentalComponent;
-    }
-
-    if (enableScopeAPI) {
-      React.unstable_createScope = createScope;
-    } // Note: some APIs are added with feature flags.
-    // Make sure that stable builds for open source
-    // don't modify the React object to avoid deopts.
-    // Also let's not expose their names in stable builds.
-
-
-    if (enableJSXTransformAPI) {
-      {
-        React.jsxDEV = jsxWithValidation;
-        React.jsx = jsxWithValidationDynamic;
-        React.jsxs = jsxWithValidationStatic;
-      }
-    }
-
-    var React$2 = Object.freeze({
-      default: React
-    });
-    var React$3 = React$2 && React || React$2; // TODO: decide on the top-level export form.
-    // This is hacky but makes it work with both Rollup and Jest.
-
-    var react = React$3.default || React$3;
-    module.exports = react;
+    exports.Children = Children;
+    exports.Component = Component;
+    exports.Fragment = REACT_FRAGMENT_TYPE;
+    exports.Profiler = REACT_PROFILER_TYPE;
+    exports.PureComponent = PureComponent;
+    exports.StrictMode = REACT_STRICT_MODE_TYPE;
+    exports.Suspense = REACT_SUSPENSE_TYPE;
+    exports.__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED = ReactSharedInternals;
+    exports.cloneElement = cloneElement$1;
+    exports.createContext = createContext;
+    exports.createElement = createElement$1;
+    exports.createFactory = createFactory;
+    exports.createRef = createRef;
+    exports.forwardRef = forwardRef;
+    exports.isValidElement = isValidElement;
+    exports.lazy = lazy;
+    exports.memo = memo;
+    exports.useCallback = useCallback;
+    exports.useContext = useContext;
+    exports.useDebugValue = useDebugValue;
+    exports.useEffect = useEffect;
+    exports.useImperativeHandle = useImperativeHandle;
+    exports.useLayoutEffect = useLayoutEffect;
+    exports.useMemo = useMemo;
+    exports.useReducer = useReducer;
+    exports.useRef = useRef;
+    exports.useState = useState;
+    exports.version = ReactVersion;
   })();
 }
 },{"object-assign":"../node_modules/object-assign/index.js","prop-types/checkPropTypes":"../node_modules/prop-types/checkPropTypes.js"}],"../node_modules/react/index.js":[function(require,module,exports) {
@@ -2608,7 +2209,7 @@ if ("development" === 'production') {
   module.exports = require('./cjs/react.development.js');
 }
 },{"./cjs/react.development.js":"../node_modules/react/cjs/react.development.js"}],"../node_modules/scheduler/cjs/scheduler.development.js":[function(require,module,exports) {
-/** @license React v0.16.2
+/** @license React v0.19.1
  * scheduler.development.js
  *
  * Copyright (c) Facebook, Inc. and its affiliates.
@@ -2622,19 +2223,8 @@ if ("development" !== "production") {
   (function () {
     'use strict';
 
-    Object.defineProperty(exports, '__esModule', {
-      value: true
-    });
     var enableSchedulerDebugging = false;
-    var enableIsInputPending = false;
-    var enableMessageLoopImplementation = true;
-    var enableProfiling = true; // works by scheduling a requestAnimationFrame, storing the time for the start
-    // of the frame, then scheduling a postMessage which gets scheduled after paint.
-    // Within the postMessage handler do as much work as possible until time + frame
-    // rate. By separating the idle call into a separate event tick we ensure that
-    // layout, paint and other browser work is counted against the available time.
-    // The frame rate is dynamically adjusted.
-
+    var enableProfiling = true;
     var requestHostCallback;
     var requestHostTimeout;
     var cancelHostTimeout;
@@ -2701,17 +2291,22 @@ if ("development" !== "production") {
       var _Date = window.Date;
       var _setTimeout = window.setTimeout;
       var _clearTimeout = window.clearTimeout;
-      var requestAnimationFrame = window.requestAnimationFrame;
-      var cancelAnimationFrame = window.cancelAnimationFrame;
 
       if (typeof console !== 'undefined') {
-        // TODO: Remove fb.me link
+        // TODO: Scheduler no longer requires these methods to be polyfilled. But
+        // maybe we want to continue warning if they don't exist, to preserve the
+        // option to rely on it in the future?
+        var requestAnimationFrame = window.requestAnimationFrame;
+        var cancelAnimationFrame = window.cancelAnimationFrame; // TODO: Remove fb.me link
+
         if (typeof requestAnimationFrame !== 'function') {
-          console.error("This browser doesn't support requestAnimationFrame. " + 'Make sure that you load a ' + 'polyfill in older browsers. https://fb.me/react-polyfills');
+          // Using console['error'] to evade Babel and ESLint
+          console['error']("This browser doesn't support requestAnimationFrame. " + 'Make sure that you load a ' + 'polyfill in older browsers. https://fb.me/react-polyfills');
         }
 
         if (typeof cancelAnimationFrame !== 'function') {
-          console.error("This browser doesn't support cancelAnimationFrame. " + 'Make sure that you load a ' + 'polyfill in older browsers. https://fb.me/react-polyfills');
+          // Using console['error'] to evade Babel and ESLint
+          console['error']("This browser doesn't support cancelAnimationFrame. " + 'Make sure that you load a ' + 'polyfill in older browsers. https://fb.me/react-polyfills');
         }
       }
 
@@ -2727,65 +2322,21 @@ if ("development" !== "production") {
         };
       }
 
-      var isRAFLoopRunning = false;
       var isMessageLoopRunning = false;
       var scheduledHostCallback = null;
-      var rAFTimeoutID = -1;
-      var taskTimeoutID = -1;
-      var frameLength = enableMessageLoopImplementation ? // We won't attempt to align with the vsync. Instead we'll yield multiple
-      // times per frame, often enough to keep it responsive even at really
-      // high frame rates > 120.
-      5 : // Use a heuristic to measure the frame rate and yield at the end of the
-      // frame. We start out assuming that we run at 30fps but then the
-      // heuristic tracking will adjust this value to a faster fps if we get
-      // more frequent animation frames.
-      33.33;
-      var prevRAFTime = -1;
-      var prevRAFInterval = -1;
-      var frameDeadline = 0;
-      var fpsLocked = false; // TODO: Make this configurable
-      // TODO: Adjust this based on priority?
+      var taskTimeoutID = -1; // Scheduler periodically yields in case there is other work on the main
+      // thread, like user events. By default, it yields multiple times per frame.
+      // It does not attempt to align with frame boundaries, since most tasks don't
+      // need to be frame aligned; for those that do, use requestAnimationFrame.
 
-      var maxFrameLength = 300;
-      var needsPaint = false;
+      var yieldInterval = 5;
+      var deadline = 0; // TODO: Make this configurable
 
-      if (enableIsInputPending && navigator !== undefined && navigator.scheduling !== undefined && navigator.scheduling.isInputPending !== undefined) {
-        var scheduling = navigator.scheduling;
-
-        shouldYieldToHost = function () {
-          var currentTime = exports.unstable_now();
-
-          if (currentTime >= frameDeadline) {
-            // There's no time left in the frame. We may want to yield control of
-            // the main thread, so the browser can perform high priority tasks. The
-            // main ones are painting and user input. If there's a pending paint or
-            // a pending input, then we should yield. But if there's neither, then
-            // we can yield less often while remaining responsive. We'll eventually
-            // yield regardless, since there could be a pending paint that wasn't
-            // accompanied by a call to `requestPaint`, or other main thread tasks
-            // like network events.
-            if (needsPaint || scheduling.isInputPending()) {
-              // There is either a pending paint or a pending input.
-              return true;
-            } // There's no pending input. Only yield if we've reached the max
-            // frame length.
-
-
-            return currentTime >= frameDeadline + maxFrameLength;
-          } else {
-            // There's still time left in the frame.
-            return false;
-          }
-        };
-
-        requestPaint = function () {
-          needsPaint = true;
-        };
-      } else {
+      {
         // `isInputPending` is not available. Since we have no way of knowing if
         // there's pending input, always yield at the end of the frame.
         shouldYieldToHost = function () {
-          return exports.unstable_now() >= frameDeadline;
+          return exports.unstable_now() >= deadline;
         }; // Since we yield every frame regardless, `requestPaint` has no effect.
 
 
@@ -2794,171 +2345,61 @@ if ("development" !== "production") {
 
       exports.unstable_forceFrameRate = function (fps) {
         if (fps < 0 || fps > 125) {
-          console.error('forceFrameRate takes a positive int between 0 and 125, ' + 'forcing framerates higher than 125 fps is not unsupported');
+          // Using console['error'] to evade Babel and ESLint
+          console['error']('forceFrameRate takes a positive int between 0 and 125, ' + 'forcing framerates higher than 125 fps is not unsupported');
           return;
         }
 
         if (fps > 0) {
-          frameLength = Math.floor(1000 / fps);
-          fpsLocked = true;
+          yieldInterval = Math.floor(1000 / fps);
         } else {
           // reset the framerate
-          frameLength = 33.33;
-          fpsLocked = false;
+          yieldInterval = 5;
         }
       };
 
       var performWorkUntilDeadline = function () {
-        if (enableMessageLoopImplementation) {
-          if (scheduledHostCallback !== null) {
-            var currentTime = exports.unstable_now(); // Yield after `frameLength` ms, regardless of where we are in the vsync
-            // cycle. This means there's always time remaining at the beginning of
-            // the message event.
+        if (scheduledHostCallback !== null) {
+          var currentTime = exports.unstable_now(); // Yield after `yieldInterval` ms, regardless of where we are in the vsync
+          // cycle. This means there's always time remaining at the beginning of
+          // the message event.
 
-            frameDeadline = currentTime + frameLength;
-            var hasTimeRemaining = true;
+          deadline = currentTime + yieldInterval;
+          var hasTimeRemaining = true;
 
-            try {
-              var hasMoreWork = scheduledHostCallback(hasTimeRemaining, currentTime);
+          try {
+            var hasMoreWork = scheduledHostCallback(hasTimeRemaining, currentTime);
 
-              if (!hasMoreWork) {
-                isMessageLoopRunning = false;
-                scheduledHostCallback = null;
-              } else {
-                // If there's more work, schedule the next message event at the end
-                // of the preceding one.
-                port.postMessage(null);
-              }
-            } catch (error) {
-              // If a scheduler task throws, exit the current browser task so the
-              // error can be observed.
+            if (!hasMoreWork) {
+              isMessageLoopRunning = false;
+              scheduledHostCallback = null;
+            } else {
+              // If there's more work, schedule the next message event at the end
+              // of the preceding one.
               port.postMessage(null);
-              throw error;
             }
-          } else {
-            isMessageLoopRunning = false;
-          } // Yielding to the browser will give it a chance to paint, so we can
-          // reset this.
-
-
-          needsPaint = false;
+          } catch (error) {
+            // If a scheduler task throws, exit the current browser task so the
+            // error can be observed.
+            port.postMessage(null);
+            throw error;
+          }
         } else {
-          if (scheduledHostCallback !== null) {
-            var _currentTime = exports.unstable_now();
+          isMessageLoopRunning = false;
+        } // Yielding to the browser will give it a chance to paint, so we can
 
-            var _hasTimeRemaining = frameDeadline - _currentTime > 0;
-
-            try {
-              var _hasMoreWork = scheduledHostCallback(_hasTimeRemaining, _currentTime);
-
-              if (!_hasMoreWork) {
-                scheduledHostCallback = null;
-              }
-            } catch (error) {
-              // If a scheduler task throws, exit the current browser task so the
-              // error can be observed, and post a new task as soon as possible
-              // so we can continue where we left off.
-              port.postMessage(null);
-              throw error;
-            }
-          } // Yielding to the browser will give it a chance to paint, so we can
-          // reset this.
-
-
-          needsPaint = false;
-        }
       };
 
       var channel = new MessageChannel();
       var port = channel.port2;
       channel.port1.onmessage = performWorkUntilDeadline;
 
-      var onAnimationFrame = function (rAFTime) {
-        if (scheduledHostCallback === null) {
-          // No scheduled work. Exit.
-          prevRAFTime = -1;
-          prevRAFInterval = -1;
-          isRAFLoopRunning = false;
-          return;
-        } // Eagerly schedule the next animation callback at the beginning of the
-        // frame. If the scheduler queue is not empty at the end of the frame, it
-        // will continue flushing inside that callback. If the queue *is* empty,
-        // then it will exit immediately. Posting the callback at the start of the
-        // frame ensures it's fired within the earliest possible frame. If we
-        // waited until the end of the frame to post the callback, we risk the
-        // browser skipping a frame and not firing the callback until the frame
-        // after that.
-
-
-        isRAFLoopRunning = true;
-        requestAnimationFrame(function (nextRAFTime) {
-          _clearTimeout(rAFTimeoutID);
-
-          onAnimationFrame(nextRAFTime);
-        }); // requestAnimationFrame is throttled when the tab is backgrounded. We
-        // don't want to stop working entirely. So we'll fallback to a timeout loop.
-        // TODO: Need a better heuristic for backgrounded work.
-
-        var onTimeout = function () {
-          frameDeadline = exports.unstable_now() + frameLength / 2;
-          performWorkUntilDeadline();
-          rAFTimeoutID = _setTimeout(onTimeout, frameLength * 3);
-        };
-
-        rAFTimeoutID = _setTimeout(onTimeout, frameLength * 3);
-
-        if (prevRAFTime !== -1 && // Make sure this rAF time is different from the previous one. This check
-        // could fail if two rAFs fire in the same frame.
-        rAFTime - prevRAFTime > 0.1) {
-          var rAFInterval = rAFTime - prevRAFTime;
-
-          if (!fpsLocked && prevRAFInterval !== -1) {
-            // We've observed two consecutive frame intervals. We'll use this to
-            // dynamically adjust the frame rate.
-            //
-            // If one frame goes long, then the next one can be short to catch up.
-            // If two frames are short in a row, then that's an indication that we
-            // actually have a higher frame rate than what we're currently
-            // optimizing. For example, if we're running on 120hz display or 90hz VR
-            // display. Take the max of the two in case one of them was an anomaly
-            // due to missed frame deadlines.
-            if (rAFInterval < frameLength && prevRAFInterval < frameLength) {
-              frameLength = rAFInterval < prevRAFInterval ? prevRAFInterval : rAFInterval;
-
-              if (frameLength < 8.33) {
-                // Defensive coding. We don't support higher frame rates than 120hz.
-                // If the calculated frame length gets lower than 8, it is probably
-                // a bug.
-                frameLength = 8.33;
-              }
-            }
-          }
-
-          prevRAFInterval = rAFInterval;
-        }
-
-        prevRAFTime = rAFTime;
-        frameDeadline = rAFTime + frameLength; // We use the postMessage trick to defer idle work until after the repaint.
-
-        port.postMessage(null);
-      };
-
       requestHostCallback = function (callback) {
         scheduledHostCallback = callback;
 
-        if (enableMessageLoopImplementation) {
-          if (!isMessageLoopRunning) {
-            isMessageLoopRunning = true;
-            port.postMessage(null);
-          }
-        } else {
-          if (!isRAFLoopRunning) {
-            // Start a rAF loop.
-            isRAFLoopRunning = true;
-            requestAnimationFrame(function (rAFTime) {
-              onAnimationFrame(rAFTime);
-            });
-          }
+        if (!isMessageLoopRunning) {
+          isMessageLoopRunning = true;
+          port.postMessage(null);
         }
       };
 
@@ -3007,7 +2448,7 @@ if ("development" !== "production") {
       var index = i;
 
       while (true) {
-        var parentIndex = Math.floor((index - 1) / 2);
+        var parentIndex = index - 1 >>> 1;
         var parent = heap[parentIndex];
 
         if (parent !== undefined && compare(parent, node) > 0) {
@@ -3069,25 +2510,23 @@ if ("development" !== "production") {
     var runIdCounter = 0;
     var mainThreadIdCounter = 0;
     var profilingStateSize = 4;
-    var sharedProfilingBuffer = enableProfiling ? // $FlowFixMe Flow doesn't know about SharedArrayBuffer
+    var sharedProfilingBuffer = // $FlowFixMe Flow doesn't know about SharedArrayBuffer
     typeof SharedArrayBuffer === 'function' ? new SharedArrayBuffer(profilingStateSize * Int32Array.BYTES_PER_ELEMENT) : // $FlowFixMe Flow doesn't know about ArrayBuffer
     typeof ArrayBuffer === 'function' ? new ArrayBuffer(profilingStateSize * Int32Array.BYTES_PER_ELEMENT) : null // Don't crash the init path on IE9
-    : null;
-    var profilingState = enableProfiling && sharedProfilingBuffer !== null ? new Int32Array(sharedProfilingBuffer) : []; // We can't read this but it helps save bytes for null checks
+    ;
+    var profilingState = sharedProfilingBuffer !== null ? new Int32Array(sharedProfilingBuffer) : []; // We can't read this but it helps save bytes for null checks
 
     var PRIORITY = 0;
     var CURRENT_TASK_ID = 1;
     var CURRENT_RUN_ID = 2;
     var QUEUE_SIZE = 3;
-
-    if (enableProfiling) {
+    {
       profilingState[PRIORITY] = NoPriority; // This is maintained with a counter, because the size of the priority queue
       // array might include canceled tasks.
 
       profilingState[QUEUE_SIZE] = 0;
       profilingState[CURRENT_TASK_ID] = 0;
     } // Bytes per element is 4
-
 
     var INITIAL_EVENT_LOG_SIZE = 131072;
     var MAX_EVENT_LOG_SIZE = 524288; // Equivalent to 2 megabytes
@@ -3114,7 +2553,8 @@ if ("development" !== "production") {
           eventLogSize *= 2;
 
           if (eventLogSize > MAX_EVENT_LOG_SIZE) {
-            console.error("Scheduler Profiling: Event log exceeded maximum size. Don't " + 'forget to call `stopLoggingProfilingEvents()`.');
+            // Using console['error'] to evade Babel and ESLint
+            console['error']("Scheduler Profiling: Event log exceeded maximum size. Don't " + 'forget to call `stopLoggingProfilingEvents()`.');
             stopLoggingProfilingEvents();
             return;
           }
@@ -3145,89 +2585,92 @@ if ("development" !== "production") {
       return buffer;
     }
 
-    function markTaskStart(task, time) {
-      if (enableProfiling) {
+    function markTaskStart(task, ms) {
+      {
         profilingState[QUEUE_SIZE]++;
 
         if (eventLog !== null) {
-          logEvent([TaskStartEvent, time, task.id, task.priorityLevel]);
+          // performance.now returns a float, representing milliseconds. When the
+          // event is logged, it's coerced to an int. Convert to microseconds to
+          // maintain extra degrees of precision.
+          logEvent([TaskStartEvent, ms * 1000, task.id, task.priorityLevel]);
         }
       }
     }
 
-    function markTaskCompleted(task, time) {
-      if (enableProfiling) {
+    function markTaskCompleted(task, ms) {
+      {
         profilingState[PRIORITY] = NoPriority;
         profilingState[CURRENT_TASK_ID] = 0;
         profilingState[QUEUE_SIZE]--;
 
         if (eventLog !== null) {
-          logEvent([TaskCompleteEvent, time, task.id]);
+          logEvent([TaskCompleteEvent, ms * 1000, task.id]);
         }
       }
     }
 
-    function markTaskCanceled(task, time) {
-      if (enableProfiling) {
+    function markTaskCanceled(task, ms) {
+      {
         profilingState[QUEUE_SIZE]--;
 
         if (eventLog !== null) {
-          logEvent([TaskCancelEvent, time, task.id]);
+          logEvent([TaskCancelEvent, ms * 1000, task.id]);
         }
       }
     }
 
-    function markTaskErrored(task, time) {
-      if (enableProfiling) {
+    function markTaskErrored(task, ms) {
+      {
         profilingState[PRIORITY] = NoPriority;
         profilingState[CURRENT_TASK_ID] = 0;
         profilingState[QUEUE_SIZE]--;
 
         if (eventLog !== null) {
-          logEvent([TaskErrorEvent, time, task.id]);
+          logEvent([TaskErrorEvent, ms * 1000, task.id]);
         }
       }
     }
 
-    function markTaskRun(task, time) {
-      if (enableProfiling) {
+    function markTaskRun(task, ms) {
+      {
         runIdCounter++;
         profilingState[PRIORITY] = task.priorityLevel;
         profilingState[CURRENT_TASK_ID] = task.id;
         profilingState[CURRENT_RUN_ID] = runIdCounter;
 
         if (eventLog !== null) {
-          logEvent([TaskRunEvent, time, task.id, runIdCounter]);
+          logEvent([TaskRunEvent, ms * 1000, task.id, runIdCounter]);
         }
       }
     }
 
-    function markTaskYield(task, time) {
-      if (enableProfiling) {
+    function markTaskYield(task, ms) {
+      {
         profilingState[PRIORITY] = NoPriority;
         profilingState[CURRENT_TASK_ID] = 0;
         profilingState[CURRENT_RUN_ID] = 0;
 
         if (eventLog !== null) {
-          logEvent([TaskYieldEvent, time, task.id, runIdCounter]);
+          logEvent([TaskYieldEvent, ms * 1000, task.id, runIdCounter]);
         }
       }
     }
 
-    function markSchedulerSuspended(time) {
-      if (enableProfiling) {
+    function markSchedulerSuspended(ms) {
+      {
         mainThreadIdCounter++;
 
         if (eventLog !== null) {
-          logEvent([SchedulerSuspendEvent, time, mainThreadIdCounter]);
+          logEvent([SchedulerSuspendEvent, ms * 1000, mainThreadIdCounter]);
         }
       }
     }
 
-    function markSchedulerUnsuspended(time) {
-      if (enableProfiling) {
+    function markSchedulerUnsuspended(ms) {
+      {
         if (eventLog !== null) {
-          logEvent([SchedulerResumeEvent, time, mainThreadIdCounter]);
+          logEvent([SchedulerResumeEvent, ms * 1000, mainThreadIdCounter]);
         }
       }
     }
@@ -3251,7 +2694,6 @@ if ("development" !== "production") {
 
     var taskIdCounter = 1; // Pausing the scheduler is useful for debugging.
 
-    var isSchedulerPaused = false;
     var currentTask = null;
     var currentPriorityLevel = NormalPriority; // This is set while performing work, to prevent re-entrancy.
 
@@ -3272,8 +2714,7 @@ if ("development" !== "production") {
           pop(timerQueue);
           timer.sortIndex = timer.expirationTime;
           push(taskQueue, timer);
-
-          if (enableProfiling) {
+          {
             markTaskStart(timer, currentTime);
             timer.isQueued = true;
           }
@@ -3305,10 +2746,9 @@ if ("development" !== "production") {
     }
 
     function flushWork(hasTimeRemaining, initialTime) {
-      if (enableProfiling) {
+      {
         markSchedulerUnsuspended(initialTime);
       } // We'll need a host callback the next time work is scheduled.
-
 
       isHostCallbackScheduled = false;
 
@@ -3342,8 +2782,7 @@ if ("development" !== "production") {
         currentTask = null;
         currentPriorityLevel = previousPriorityLevel;
         isPerformingWork = false;
-
-        if (enableProfiling) {
+        {
           var _currentTime = exports.unstable_now();
 
           markSchedulerSuspended(_currentTime);
@@ -3356,7 +2795,7 @@ if ("development" !== "production") {
       advanceTimers(currentTime);
       currentTask = peek(taskQueue);
 
-      while (currentTask !== null && !(enableSchedulerDebugging && isSchedulerPaused)) {
+      while (currentTask !== null && !enableSchedulerDebugging) {
         if (currentTask.expirationTime > currentTime && (!hasTimeRemaining || shouldYieldToHost())) {
           // This currentTask hasn't expired, and we've reached the deadline.
           break;
@@ -3376,7 +2815,7 @@ if ("development" !== "production") {
             currentTask.callback = continuationCallback;
             markTaskYield(currentTask, currentTime);
           } else {
-            if (enableProfiling) {
+            {
               markTaskCompleted(currentTask, currentTime);
               currentTask.isQueued = false;
             }
@@ -3522,8 +2961,7 @@ if ("development" !== "production") {
         expirationTime: expirationTime,
         sortIndex: -1
       };
-
-      if (enableProfiling) {
+      {
         newTask.isQueued = false;
       }
 
@@ -3547,13 +2985,11 @@ if ("development" !== "production") {
       } else {
         newTask.sortIndex = expirationTime;
         push(taskQueue, newTask);
-
-        if (enableProfiling) {
+        {
           markTaskStart(newTask, currentTime);
           newTask.isQueued = true;
         } // Schedule a host callback, if needed. If we're already performing work,
         // wait until the next time we yield.
-
 
         if (!isHostCallbackScheduled && !isPerformingWork) {
           isHostCallbackScheduled = true;
@@ -3564,13 +3000,9 @@ if ("development" !== "production") {
       return newTask;
     }
 
-    function unstable_pauseExecution() {
-      isSchedulerPaused = true;
-    }
+    function unstable_pauseExecution() {}
 
     function unstable_continueExecution() {
-      isSchedulerPaused = false;
-
       if (!isHostCallbackScheduled && !isPerformingWork) {
         isHostCallbackScheduled = true;
         requestHostCallback(flushWork);
@@ -3582,7 +3014,7 @@ if ("development" !== "production") {
     }
 
     function unstable_cancelCallback(task) {
-      if (enableProfiling) {
+      {
         if (task.isQueued) {
           var currentTime = exports.unstable_now();
           markTaskCanceled(task, currentTime);
@@ -3591,7 +3023,6 @@ if ("development" !== "production") {
       } // Null out the callback to indicate the task has been canceled. (Can't
       // remove from the queue because you can't remove arbitrary nodes from an
       // array based heap, only the first one.)
-
 
       task.callback = null;
     }
@@ -3608,28 +3039,28 @@ if ("development" !== "production") {
     }
 
     var unstable_requestPaint = requestPaint;
-    var unstable_Profiling = enableProfiling ? {
+    var unstable_Profiling = {
       startLoggingProfilingEvents: startLoggingProfilingEvents,
       stopLoggingProfilingEvents: stopLoggingProfilingEvents,
       sharedProfilingBuffer: sharedProfilingBuffer
-    } : null;
-    exports.unstable_ImmediatePriority = ImmediatePriority;
-    exports.unstable_UserBlockingPriority = UserBlockingPriority;
-    exports.unstable_NormalPriority = NormalPriority;
+    };
     exports.unstable_IdlePriority = IdlePriority;
+    exports.unstable_ImmediatePriority = ImmediatePriority;
     exports.unstable_LowPriority = LowPriority;
-    exports.unstable_runWithPriority = unstable_runWithPriority;
-    exports.unstable_next = unstable_next;
-    exports.unstable_scheduleCallback = unstable_scheduleCallback;
-    exports.unstable_cancelCallback = unstable_cancelCallback;
-    exports.unstable_wrapCallback = unstable_wrapCallback;
-    exports.unstable_getCurrentPriorityLevel = unstable_getCurrentPriorityLevel;
-    exports.unstable_shouldYield = unstable_shouldYield;
-    exports.unstable_requestPaint = unstable_requestPaint;
-    exports.unstable_continueExecution = unstable_continueExecution;
-    exports.unstable_pauseExecution = unstable_pauseExecution;
-    exports.unstable_getFirstCallbackNode = unstable_getFirstCallbackNode;
+    exports.unstable_NormalPriority = NormalPriority;
     exports.unstable_Profiling = unstable_Profiling;
+    exports.unstable_UserBlockingPriority = UserBlockingPriority;
+    exports.unstable_cancelCallback = unstable_cancelCallback;
+    exports.unstable_continueExecution = unstable_continueExecution;
+    exports.unstable_getCurrentPriorityLevel = unstable_getCurrentPriorityLevel;
+    exports.unstable_getFirstCallbackNode = unstable_getFirstCallbackNode;
+    exports.unstable_next = unstable_next;
+    exports.unstable_pauseExecution = unstable_pauseExecution;
+    exports.unstable_requestPaint = unstable_requestPaint;
+    exports.unstable_runWithPriority = unstable_runWithPriority;
+    exports.unstable_scheduleCallback = unstable_scheduleCallback;
+    exports.unstable_shouldYield = unstable_shouldYield;
+    exports.unstable_wrapCallback = unstable_wrapCallback;
   })();
 }
 },{}],"../node_modules/scheduler/index.js":[function(require,module,exports) {
@@ -3641,7 +3072,7 @@ if ("development" === 'production') {
   module.exports = require('./cjs/scheduler.development.js');
 }
 },{"./cjs/scheduler.development.js":"../node_modules/scheduler/cjs/scheduler.development.js"}],"../node_modules/scheduler/cjs/scheduler-tracing.development.js":[function(require,module,exports) {
-/** @license React v0.16.2
+/** @license React v0.19.1
  * scheduler-tracing.development.js
  *
  * Copyright (c) Facebook, Inc. and its affiliates.
@@ -3655,50 +3086,6 @@ if ("development" !== "production") {
   (function () {
     'use strict';
 
-    Object.defineProperty(exports, '__esModule', {
-      value: true
-    }); // Helps identify side effects in begin-phase lifecycle hooks and setState reducers:
-    // In some cases, StrictMode should also double-render lifecycles.
-    // This can be confusing for tests though,
-    // And it can be bad for performance in production.
-    // This feature flag can be used to control the behavior:
-    // To preserve the "Pause on caught exceptions" behavior of the debugger, we
-    // replay the begin phase of a failed component inside invokeGuardedCallback.
-    // Warn about deprecated, async-unsafe lifecycles; relates to RFC #6:
-    // Gather advanced timing metrics for Profiler subtrees.
-    // Trace which interactions trigger each commit.
-
-    var enableSchedulerTracing = true; // Only used in www builds.
-    // TODO: true? Here it might just be false.
-    // Only used in www builds.
-    // Only used in www builds.
-    // Disable javascript: URL strings in href for XSS protection.
-    // React Fire: prevent the value and checked attributes from syncing
-    // with their related DOM properties
-    // These APIs will no longer be "unstable" in the upcoming 16.7 release,
-    // Control this behavior with a flag to support 16.6 minor releases in the meanwhile.
-    // See https://github.com/react-native-community/discussions-and-proposals/issues/72 for more information
-    // This is a flag so we can fix warnings in RN core before turning it on
-    // Experimental React Flare event system and event components support.
-    // Experimental Host Component support.
-    // Experimental Scope support.
-    // New API for JSX transforms to target - https://github.com/reactjs/rfcs/pull/107
-    // We will enforce mocking scheduler with scheduler/unstable_mock at some point. (v17?)
-    // Till then, we warn about the missing mock, but still fallback to a sync mode compatible version
-    // For tests, we flush suspense fallbacks in an act scope;
-    // *except* in some of our own tests, where we test incremental loading states.
-    // Changes priority of some events like mousemove to user-blocking priority,
-    // but without making them discrete. The flag exists in case it causes
-    // starvation problems.
-    // Add a callback property to suspense to notify which promises are currently
-    // in the update queue. This allows reporting and tracing of what is causing
-    // the user to see a loading state.
-    // Also allows hydration callbacks to fire when a dehydrated boundary gets
-    // hydrated or deleted.
-    // Part of the simplification of React.createElement so we can eventually move
-    // from React.createElement to React.jsx
-    // https://github.com/reactjs/rfcs/blob/createlement-rfc/text/0000-create-element-changes.md
-
     var DEFAULT_THREAD_ID = 0; // Counters used to generate unique IDs.
 
     var interactionIDCounter = 0;
@@ -3710,8 +3097,7 @@ if ("development" !== "production") {
     exports.__interactionsRef = null; // Listener(s) to notify when interactions begin and end.
 
     exports.__subscriberRef = null;
-
-    if (enableSchedulerTracing) {
+    {
       exports.__interactionsRef = {
         current: new Set()
       };
@@ -3721,10 +3107,6 @@ if ("development" !== "production") {
     }
 
     function unstable_clear(callback) {
-      if (!enableSchedulerTracing) {
-        return callback();
-      }
-
       var prevInteractions = exports.__interactionsRef.current;
       exports.__interactionsRef.current = new Set();
 
@@ -3736,9 +3118,7 @@ if ("development" !== "production") {
     }
 
     function unstable_getCurrent() {
-      if (!enableSchedulerTracing) {
-        return null;
-      } else {
+      {
         return exports.__interactionsRef.current;
       }
     }
@@ -3749,11 +3129,6 @@ if ("development" !== "production") {
 
     function unstable_trace(name, timestamp, callback) {
       var threadID = arguments.length > 3 && arguments[3] !== undefined ? arguments[3] : DEFAULT_THREAD_ID;
-
-      if (!enableSchedulerTracing) {
-        return callback();
-      }
-
       var interaction = {
         __count: 1,
         id: interactionIDCounter++,
@@ -3806,11 +3181,6 @@ if ("development" !== "production") {
 
     function unstable_wrap(callback) {
       var threadID = arguments.length > 1 && arguments[1] !== undefined ? arguments[1] : DEFAULT_THREAD_ID;
-
-      if (!enableSchedulerTracing) {
-        return callback;
-      }
-
       var wrappedInteractions = exports.__interactionsRef.current;
       var subscriber = exports.__subscriberRef.current;
 
@@ -3895,13 +3265,12 @@ if ("development" !== "production") {
     }
 
     var subscribers = null;
-
-    if (enableSchedulerTracing) {
+    {
       subscribers = new Set();
     }
 
     function unstable_subscribe(subscriber) {
-      if (enableSchedulerTracing) {
+      {
         subscribers.add(subscriber);
 
         if (subscribers.size === 1) {
@@ -3918,7 +3287,7 @@ if ("development" !== "production") {
     }
 
     function unstable_unsubscribe(subscriber) {
-      if (enableSchedulerTracing) {
+      {
         subscribers.delete(subscriber);
 
         if (subscribers.size === 0) {
@@ -4044,10 +3413,10 @@ if ("development" !== "production") {
     exports.unstable_clear = unstable_clear;
     exports.unstable_getCurrent = unstable_getCurrent;
     exports.unstable_getThreadID = unstable_getThreadID;
-    exports.unstable_trace = unstable_trace;
-    exports.unstable_wrap = unstable_wrap;
     exports.unstable_subscribe = unstable_subscribe;
+    exports.unstable_trace = unstable_trace;
     exports.unstable_unsubscribe = unstable_unsubscribe;
+    exports.unstable_wrap = unstable_wrap;
   })();
 }
 },{}],"../node_modules/scheduler/tracing.js":[function(require,module,exports) {
@@ -33698,7 +33067,196 @@ module.exports.default = axios;
 
 },{"./utils":"../node_modules/axios/lib/utils.js","./helpers/bind":"../node_modules/axios/lib/helpers/bind.js","./core/Axios":"../node_modules/axios/lib/core/Axios.js","./core/mergeConfig":"../node_modules/axios/lib/core/mergeConfig.js","./defaults":"../node_modules/axios/lib/defaults.js","./cancel/Cancel":"../node_modules/axios/lib/cancel/Cancel.js","./cancel/CancelToken":"../node_modules/axios/lib/cancel/CancelToken.js","./cancel/isCancel":"../node_modules/axios/lib/cancel/isCancel.js","./helpers/spread":"../node_modules/axios/lib/helpers/spread.js"}],"../node_modules/axios/index.js":[function(require,module,exports) {
 module.exports = require('./lib/axios');
-},{"./lib/axios":"../node_modules/axios/lib/axios.js"}],"../node_modules/react-is/cjs/react-is.development.js":[function(require,module,exports) {
+},{"./lib/axios":"../node_modules/axios/lib/axios.js"}],"../node_modules/@babel/runtime/helpers/esm/extends.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = _extends;
+
+function _extends() {
+  exports.default = _extends = Object.assign || function (target) {
+    for (var i = 1; i < arguments.length; i++) {
+      var source = arguments[i];
+
+      for (var key in source) {
+        if (Object.prototype.hasOwnProperty.call(source, key)) {
+          target[key] = source[key];
+        }
+      }
+    }
+
+    return target;
+  };
+
+  return _extends.apply(this, arguments);
+}
+},{}],"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = _objectWithoutPropertiesLoose;
+
+function _objectWithoutPropertiesLoose(source, excluded) {
+  if (source == null) return {};
+  var target = {};
+  var sourceKeys = Object.keys(source);
+  var key, i;
+
+  for (i = 0; i < sourceKeys.length; i++) {
+    key = sourceKeys[i];
+    if (excluded.indexOf(key) >= 0) continue;
+    target[key] = source[key];
+  }
+
+  return target;
+}
+},{}],"../node_modules/classnames/index.js":[function(require,module,exports) {
+var define;
+/*!
+  Copyright (c) 2017 Jed Watson.
+  Licensed under the MIT License (MIT), see
+  http://jedwatson.github.io/classnames
+*/
+/* global define */
+
+(function () {
+	'use strict';
+
+	var hasOwn = {}.hasOwnProperty;
+
+	function classNames () {
+		var classes = [];
+
+		for (var i = 0; i < arguments.length; i++) {
+			var arg = arguments[i];
+			if (!arg) continue;
+
+			var argType = typeof arg;
+
+			if (argType === 'string' || argType === 'number') {
+				classes.push(arg);
+			} else if (Array.isArray(arg) && arg.length) {
+				var inner = classNames.apply(null, arg);
+				if (inner) {
+					classes.push(inner);
+				}
+			} else if (argType === 'object') {
+				for (var key in arg) {
+					if (hasOwn.call(arg, key) && arg[key]) {
+						classes.push(key);
+					}
+				}
+			}
+		}
+
+		return classes.join(' ');
+	}
+
+	if (typeof module !== 'undefined' && module.exports) {
+		classNames.default = classNames;
+		module.exports = classNames;
+	} else if (typeof define === 'function' && typeof define.amd === 'object' && define.amd) {
+		// register as 'classnames', consistent with npm package name
+		define('classnames', [], function () {
+			return classNames;
+		});
+	} else {
+		window.classNames = classNames;
+	}
+}());
+
+},{}],"../node_modules/prop-types-extra/lib/utils/createChainableTypeChecker.js":[function(require,module,exports) {
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = createChainableTypeChecker;
+/**
+ * Copyright 2013-present, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+// Mostly taken from ReactPropTypes.
+
+function createChainableTypeChecker(validate) {
+  function checkType(isRequired, props, propName, componentName, location, propFullName) {
+    var componentNameSafe = componentName || '<<anonymous>>';
+    var propFullNameSafe = propFullName || propName;
+
+    if (props[propName] == null) {
+      if (isRequired) {
+        return new Error('Required ' + location + ' `' + propFullNameSafe + '` was not specified ' + ('in `' + componentNameSafe + '`.'));
+      }
+
+      return null;
+    }
+
+    for (var _len = arguments.length, args = Array(_len > 6 ? _len - 6 : 0), _key = 6; _key < _len; _key++) {
+      args[_key - 6] = arguments[_key];
+    }
+
+    return validate.apply(undefined, [props, propName, componentNameSafe, location, propFullNameSafe].concat(args));
+  }
+
+  var chainedCheckType = checkType.bind(null, false);
+  chainedCheckType.isRequired = checkType.bind(null, true);
+
+  return chainedCheckType;
+}
+module.exports = exports['default'];
+},{}],"../node_modules/prop-types-extra/lib/all.js":[function(require,module,exports) {
+'use strict';
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = all;
+
+var _createChainableTypeChecker = require('./utils/createChainableTypeChecker');
+
+var _createChainableTypeChecker2 = _interopRequireDefault(_createChainableTypeChecker);
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function all() {
+  for (var _len = arguments.length, validators = Array(_len), _key = 0; _key < _len; _key++) {
+    validators[_key] = arguments[_key];
+  }
+
+  function allPropTypes() {
+    for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+      args[_key2] = arguments[_key2];
+    }
+
+    var error = null;
+
+    validators.forEach(function (validator) {
+      if (error != null) {
+        return;
+      }
+
+      var result = validator.apply(undefined, args);
+      if (result != null) {
+        error = result;
+      }
+    });
+
+    return error;
+  }
+
+  return (0, _createChainableTypeChecker2.default)(allPropTypes);
+}
+module.exports = exports['default'];
+},{"./utils/createChainableTypeChecker":"../node_modules/prop-types-extra/lib/utils/createChainableTypeChecker.js"}],"../node_modules/react-is/cjs/react-is.development.js":[function(require,module,exports) {
 /** @license React v16.10.2
  * react-is.development.js
  *
@@ -34616,196 +34174,7 @@ if ("development" !== 'production') {
   // http://fb.me/prop-types-in-prod
   module.exports = require('./factoryWithThrowingShims')();
 }
-},{"react-is":"../node_modules/react-is/index.js","./factoryWithTypeCheckers":"../node_modules/prop-types/factoryWithTypeCheckers.js"}],"../node_modules/@babel/runtime/helpers/esm/extends.js":[function(require,module,exports) {
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.default = _extends;
-
-function _extends() {
-  exports.default = _extends = Object.assign || function (target) {
-    for (var i = 1; i < arguments.length; i++) {
-      var source = arguments[i];
-
-      for (var key in source) {
-        if (Object.prototype.hasOwnProperty.call(source, key)) {
-          target[key] = source[key];
-        }
-      }
-    }
-
-    return target;
-  };
-
-  return _extends.apply(this, arguments);
-}
-},{}],"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js":[function(require,module,exports) {
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.default = _objectWithoutPropertiesLoose;
-
-function _objectWithoutPropertiesLoose(source, excluded) {
-  if (source == null) return {};
-  var target = {};
-  var sourceKeys = Object.keys(source);
-  var key, i;
-
-  for (i = 0; i < sourceKeys.length; i++) {
-    key = sourceKeys[i];
-    if (excluded.indexOf(key) >= 0) continue;
-    target[key] = source[key];
-  }
-
-  return target;
-}
-},{}],"../node_modules/classnames/index.js":[function(require,module,exports) {
-var define;
-/*!
-  Copyright (c) 2017 Jed Watson.
-  Licensed under the MIT License (MIT), see
-  http://jedwatson.github.io/classnames
-*/
-/* global define */
-
-(function () {
-	'use strict';
-
-	var hasOwn = {}.hasOwnProperty;
-
-	function classNames () {
-		var classes = [];
-
-		for (var i = 0; i < arguments.length; i++) {
-			var arg = arguments[i];
-			if (!arg) continue;
-
-			var argType = typeof arg;
-
-			if (argType === 'string' || argType === 'number') {
-				classes.push(arg);
-			} else if (Array.isArray(arg) && arg.length) {
-				var inner = classNames.apply(null, arg);
-				if (inner) {
-					classes.push(inner);
-				}
-			} else if (argType === 'object') {
-				for (var key in arg) {
-					if (hasOwn.call(arg, key) && arg[key]) {
-						classes.push(key);
-					}
-				}
-			}
-		}
-
-		return classes.join(' ');
-	}
-
-	if (typeof module !== 'undefined' && module.exports) {
-		classNames.default = classNames;
-		module.exports = classNames;
-	} else if (typeof define === 'function' && typeof define.amd === 'object' && define.amd) {
-		// register as 'classnames', consistent with npm package name
-		define('classnames', [], function () {
-			return classNames;
-		});
-	} else {
-		window.classNames = classNames;
-	}
-}());
-
-},{}],"../node_modules/prop-types-extra/lib/utils/createChainableTypeChecker.js":[function(require,module,exports) {
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.default = createChainableTypeChecker;
-/**
- * Copyright 2013-present, Facebook, Inc.
- * All rights reserved.
- *
- * This source code is licensed under the BSD-style license found in the
- * LICENSE file in the root directory of this source tree. An additional grant
- * of patent rights can be found in the PATENTS file in the same directory.
- */
-
-// Mostly taken from ReactPropTypes.
-
-function createChainableTypeChecker(validate) {
-  function checkType(isRequired, props, propName, componentName, location, propFullName) {
-    var componentNameSafe = componentName || '<<anonymous>>';
-    var propFullNameSafe = propFullName || propName;
-
-    if (props[propName] == null) {
-      if (isRequired) {
-        return new Error('Required ' + location + ' `' + propFullNameSafe + '` was not specified ' + ('in `' + componentNameSafe + '`.'));
-      }
-
-      return null;
-    }
-
-    for (var _len = arguments.length, args = Array(_len > 6 ? _len - 6 : 0), _key = 6; _key < _len; _key++) {
-      args[_key - 6] = arguments[_key];
-    }
-
-    return validate.apply(undefined, [props, propName, componentNameSafe, location, propFullNameSafe].concat(args));
-  }
-
-  var chainedCheckType = checkType.bind(null, false);
-  chainedCheckType.isRequired = checkType.bind(null, true);
-
-  return chainedCheckType;
-}
-module.exports = exports['default'];
-},{}],"../node_modules/prop-types-extra/lib/all.js":[function(require,module,exports) {
-'use strict';
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.default = all;
-
-var _createChainableTypeChecker = require('./utils/createChainableTypeChecker');
-
-var _createChainableTypeChecker2 = _interopRequireDefault(_createChainableTypeChecker);
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-function all() {
-  for (var _len = arguments.length, validators = Array(_len), _key = 0; _key < _len; _key++) {
-    validators[_key] = arguments[_key];
-  }
-
-  function allPropTypes() {
-    for (var _len2 = arguments.length, args = Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
-      args[_key2] = arguments[_key2];
-    }
-
-    var error = null;
-
-    validators.forEach(function (validator) {
-      if (error != null) {
-        return;
-      }
-
-      var result = validator.apply(undefined, args);
-      if (result != null) {
-        error = result;
-      }
-    });
-
-    return error;
-  }
-
-  return (0, _createChainableTypeChecker2.default)(allPropTypes);
-}
-module.exports = exports['default'];
-},{"./utils/createChainableTypeChecker":"../node_modules/prop-types-extra/lib/utils/createChainableTypeChecker.js"}],"../node_modules/react-bootstrap/esm/Feedback.js":[function(require,module,exports) {
+},{"react-is":"../node_modules/react-is/index.js","./factoryWithTypeCheckers":"../node_modules/prop-types/factoryWithTypeCheckers.js"}],"../node_modules/react-bootstrap/esm/Feedback.js":[function(require,module,exports) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -35902,7 +35271,1844 @@ Button.displayName = 'Button';
 Button.defaultProps = defaultProps;
 var _default = Button;
 exports.default = _default;
-},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js","./SafeAnchor":"../node_modules/react-bootstrap/esm/SafeAnchor.js"}],"../node_modules/react-bootstrap/esm/Row.js":[function(require,module,exports) {
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js","./SafeAnchor":"../node_modules/react-bootstrap/esm/SafeAnchor.js"}],"../node_modules/invariant/browser.js":[function(require,module,exports) {
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+'use strict';
+/**
+ * Use invariant() to assert state which your program assumes to be true.
+ *
+ * Provide sprintf-style format (only %s is supported) and arguments
+ * to provide information about what broke and what you were
+ * expecting.
+ *
+ * The invariant message will be stripped in production, but the invariant
+ * will remain to ensure logic does not differ in production.
+ */
+
+var invariant = function (condition, format, a, b, c, d, e, f) {
+  if ("development" !== 'production') {
+    if (format === undefined) {
+      throw new Error('invariant requires an error message argument');
+    }
+  }
+
+  if (!condition) {
+    var error;
+
+    if (format === undefined) {
+      error = new Error('Minified exception occurred; use the non-minified dev environment ' + 'for the full error message and additional helpful warnings.');
+    } else {
+      var args = [a, b, c, d, e, f];
+      var argIndex = 0;
+      error = new Error(format.replace(/%s/g, function () {
+        return args[argIndex++];
+      }));
+      error.name = 'Invariant Violation';
+    }
+
+    error.framesToPop = 1; // we don't care about invariant's own frame
+
+    throw error;
+  }
+};
+
+module.exports = invariant;
+},{}],"../node_modules/uncontrollable/esm/utils.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.uncontrolledPropTypes = uncontrolledPropTypes;
+exports.isProp = isProp;
+exports.defaultKey = defaultKey;
+exports.canAcceptRef = canAcceptRef;
+
+var _invariant = _interopRequireDefault(require("invariant"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var noop = function noop() {};
+
+function readOnlyPropType(handler, name) {
+  return function (props, propName) {
+    if (props[propName] !== undefined) {
+      if (!props[handler]) {
+        return new Error("You have provided a `" + propName + "` prop to `" + name + "` " + ("without an `" + handler + "` handler prop. This will render a read-only field. ") + ("If the field should be mutable use `" + defaultKey(propName) + "`. ") + ("Otherwise, set `" + handler + "`."));
+      }
+    }
+  };
+}
+
+function uncontrolledPropTypes(controlledValues, displayName) {
+  var propTypes = {};
+  Object.keys(controlledValues).forEach(function (prop) {
+    // add default propTypes for folks that use runtime checks
+    propTypes[defaultKey(prop)] = noop;
+
+    if ("development" !== 'production') {
+      var handler = controlledValues[prop];
+      !(typeof handler === 'string' && handler.trim().length) ? "development" !== "production" ? (0, _invariant.default)(false, 'Uncontrollable - [%s]: the prop `%s` needs a valid handler key name in order to make it uncontrollable', displayName, prop) : (0, _invariant.default)(false) : void 0;
+      propTypes[prop] = readOnlyPropType(handler, displayName);
+    }
+  });
+  return propTypes;
+}
+
+function isProp(props, prop) {
+  return props[prop] !== undefined;
+}
+
+function defaultKey(key) {
+  return 'default' + key.charAt(0).toUpperCase() + key.substr(1);
+}
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ * All rights reserved.
+ *
+ * This source code is licensed under the BSD-style license found in the
+ * LICENSE file in the root directory of this source tree. An additional grant
+ * of patent rights can be found in the PATENTS file in the same directory.
+ */
+
+
+function canAcceptRef(component) {
+  return !!component && (typeof component !== 'function' || component.prototype && component.prototype.isReactComponent);
+}
+},{"invariant":"../node_modules/invariant/browser.js"}],"../node_modules/uncontrollable/esm/hook.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = useUncontrolled;
+
+var _extends3 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _react = require("react");
+
+var Utils = _interopRequireWildcard(require("./utils"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function () { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _toPropertyKey(arg) {
+  var key = _toPrimitive(arg, "string");
+
+  return typeof key === "symbol" ? key : String(key);
+}
+
+function _toPrimitive(input, hint) {
+  if (typeof input !== "object" || input === null) return input;
+  var prim = input[Symbol.toPrimitive];
+
+  if (prim !== undefined) {
+    var res = prim.call(input, hint || "default");
+    if (typeof res !== "object") return res;
+    throw new TypeError("@@toPrimitive must return a primitive value.");
+  }
+
+  return (hint === "string" ? String : Number)(input);
+}
+
+function useUncontrolled(props, config) {
+  return Object.keys(config).reduce(function (result, fieldName) {
+    var _extends2;
+
+    var defaultValue = result[Utils.defaultKey(fieldName)],
+        propsValue = result[fieldName],
+        rest = (0, _objectWithoutPropertiesLoose2.default)(result, [Utils.defaultKey(fieldName), fieldName].map(_toPropertyKey));
+    var handlerName = config[fieldName];
+    var prevProps = (0, _react.useRef)({});
+
+    var _useState = (0, _react.useState)(defaultValue),
+        stateValue = _useState[0],
+        setState = _useState[1];
+
+    var isProp = Utils.isProp(props, fieldName);
+    var wasProp = Utils.isProp(prevProps.current, fieldName);
+    prevProps.current = props;
+    /**
+     * If a prop switches from controlled to Uncontrolled
+     * reset its value to the defaultValue
+     */
+
+    if (!isProp && wasProp) {
+      setState(defaultValue);
+    }
+
+    var propsHandler = props[handlerName];
+    var handler = (0, _react.useCallback)(function (value) {
+      for (var _len = arguments.length, args = new Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+        args[_key - 1] = arguments[_key];
+      }
+
+      if (propsHandler) propsHandler.apply(void 0, [value].concat(args));
+      setState(value);
+    }, [setState, propsHandler]);
+    return (0, _extends3.default)({}, rest, (_extends2 = {}, _extends2[fieldName] = isProp ? propsValue : stateValue, _extends2[handlerName] = handler, _extends2));
+  }, props);
+}
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","react":"../node_modules/react/index.js","./utils":"../node_modules/uncontrollable/esm/utils.js"}],"../node_modules/@babel/runtime/helpers/esm/inheritsLoose.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = _inheritsLoose;
+
+function _inheritsLoose(subClass, superClass) {
+  subClass.prototype = Object.create(superClass.prototype);
+  subClass.prototype.constructor = subClass;
+  subClass.__proto__ = superClass;
+}
+},{}],"../node_modules/react-lifecycles-compat/react-lifecycles-compat.es.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.polyfill = polyfill;
+
+/**
+ * Copyright (c) 2013-present, Facebook, Inc.
+ *
+ * This source code is licensed under the MIT license found in the
+ * LICENSE file in the root directory of this source tree.
+ */
+function componentWillMount() {
+  // Call this.constructor.gDSFP to support sub-classes.
+  var state = this.constructor.getDerivedStateFromProps(this.props, this.state);
+
+  if (state !== null && state !== undefined) {
+    this.setState(state);
+  }
+}
+
+function componentWillReceiveProps(nextProps) {
+  // Call this.constructor.gDSFP to support sub-classes.
+  // Use the setState() updater to ensure state isn't stale in certain edge cases.
+  function updater(prevState) {
+    var state = this.constructor.getDerivedStateFromProps(nextProps, prevState);
+    return state !== null && state !== undefined ? state : null;
+  } // Binding "this" is important for shallow renderer support.
+
+
+  this.setState(updater.bind(this));
+}
+
+function componentWillUpdate(nextProps, nextState) {
+  try {
+    var prevProps = this.props;
+    var prevState = this.state;
+    this.props = nextProps;
+    this.state = nextState;
+    this.__reactInternalSnapshotFlag = true;
+    this.__reactInternalSnapshot = this.getSnapshotBeforeUpdate(prevProps, prevState);
+  } finally {
+    this.props = prevProps;
+    this.state = prevState;
+  }
+} // React may warn about cWM/cWRP/cWU methods being deprecated.
+// Add a flag to suppress these warnings for this special case.
+
+
+componentWillMount.__suppressDeprecationWarning = true;
+componentWillReceiveProps.__suppressDeprecationWarning = true;
+componentWillUpdate.__suppressDeprecationWarning = true;
+
+function polyfill(Component) {
+  var prototype = Component.prototype;
+
+  if (!prototype || !prototype.isReactComponent) {
+    throw new Error('Can only polyfill class components');
+  }
+
+  if (typeof Component.getDerivedStateFromProps !== 'function' && typeof prototype.getSnapshotBeforeUpdate !== 'function') {
+    return Component;
+  } // If new component APIs are defined, "unsafe" lifecycles won't be called.
+  // Error if any of these lifecycles are present,
+  // Because they would work differently between older and newer (16.3+) versions of React.
+
+
+  var foundWillMountName = null;
+  var foundWillReceivePropsName = null;
+  var foundWillUpdateName = null;
+
+  if (typeof prototype.componentWillMount === 'function') {
+    foundWillMountName = 'componentWillMount';
+  } else if (typeof prototype.UNSAFE_componentWillMount === 'function') {
+    foundWillMountName = 'UNSAFE_componentWillMount';
+  }
+
+  if (typeof prototype.componentWillReceiveProps === 'function') {
+    foundWillReceivePropsName = 'componentWillReceiveProps';
+  } else if (typeof prototype.UNSAFE_componentWillReceiveProps === 'function') {
+    foundWillReceivePropsName = 'UNSAFE_componentWillReceiveProps';
+  }
+
+  if (typeof prototype.componentWillUpdate === 'function') {
+    foundWillUpdateName = 'componentWillUpdate';
+  } else if (typeof prototype.UNSAFE_componentWillUpdate === 'function') {
+    foundWillUpdateName = 'UNSAFE_componentWillUpdate';
+  }
+
+  if (foundWillMountName !== null || foundWillReceivePropsName !== null || foundWillUpdateName !== null) {
+    var componentName = Component.displayName || Component.name;
+    var newApiName = typeof Component.getDerivedStateFromProps === 'function' ? 'getDerivedStateFromProps()' : 'getSnapshotBeforeUpdate()';
+    throw Error('Unsafe legacy lifecycles will not be called for components using new component APIs.\n\n' + componentName + ' uses ' + newApiName + ' but also contains the following legacy lifecycles:' + (foundWillMountName !== null ? '\n  ' + foundWillMountName : '') + (foundWillReceivePropsName !== null ? '\n  ' + foundWillReceivePropsName : '') + (foundWillUpdateName !== null ? '\n  ' + foundWillUpdateName : '') + '\n\nThe above lifecycles should be removed. Learn more about this warning here:\n' + 'https://fb.me/react-async-component-lifecycle-hooks');
+  } // React <= 16.2 does not support static getDerivedStateFromProps.
+  // As a workaround, use cWM and cWRP to invoke the new static lifecycle.
+  // Newer versions of React will ignore these lifecycles if gDSFP exists.
+
+
+  if (typeof Component.getDerivedStateFromProps === 'function') {
+    prototype.componentWillMount = componentWillMount;
+    prototype.componentWillReceiveProps = componentWillReceiveProps;
+  } // React <= 16.2 does not support getSnapshotBeforeUpdate.
+  // As a workaround, use cWU to invoke the new lifecycle.
+  // Newer versions of React will ignore that lifecycle if gSBU exists.
+
+
+  if (typeof prototype.getSnapshotBeforeUpdate === 'function') {
+    if (typeof prototype.componentDidUpdate !== 'function') {
+      throw new Error('Cannot polyfill getSnapshotBeforeUpdate() for components that do not define componentDidUpdate() on the prototype');
+    }
+
+    prototype.componentWillUpdate = componentWillUpdate;
+    var componentDidUpdate = prototype.componentDidUpdate;
+
+    prototype.componentDidUpdate = function componentDidUpdatePolyfill(prevProps, prevState, maybeSnapshot) {
+      // 16.3+ will not execute our will-update method;
+      // It will pass a snapshot value to did-update though.
+      // Older versions will require our polyfilled will-update value.
+      // We need to handle both cases, but can't just check for the presence of "maybeSnapshot",
+      // Because for <= 15.x versions this might be a "prevContext" object.
+      // We also can't just check "__reactInternalSnapshot",
+      // Because get-snapshot might return a falsy value.
+      // So check for the explicit __reactInternalSnapshotFlag flag to determine behavior.
+      var snapshot = this.__reactInternalSnapshotFlag ? this.__reactInternalSnapshot : maybeSnapshot;
+      componentDidUpdate.call(this, prevProps, prevState, snapshot);
+    };
+  }
+
+  return Component;
+}
+},{}],"../node_modules/uncontrollable/esm/uncontrollable.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = uncontrollable;
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _extends3 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _inheritsLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/inheritsLoose"));
+
+var _react = _interopRequireDefault(require("react"));
+
+var _reactLifecyclesCompat = require("react-lifecycles-compat");
+
+var _invariant = _interopRequireDefault(require("invariant"));
+
+var Utils = _interopRequireWildcard(require("./utils"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function () { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function uncontrollable(Component, controlledValues, methods) {
+  if (methods === void 0) {
+    methods = [];
+  }
+
+  var displayName = Component.displayName || Component.name || 'Component';
+  var canAcceptRef = Utils.canAcceptRef(Component);
+  var controlledProps = Object.keys(controlledValues);
+  var PROPS_TO_OMIT = controlledProps.map(Utils.defaultKey);
+  !(canAcceptRef || !methods.length) ? "development" !== "production" ? (0, _invariant.default)(false, '[uncontrollable] stateless function components cannot pass through methods ' + 'because they have no associated instances. Check component: ' + displayName + ', ' + 'attempting to pass through methods: ' + methods.join(', ')) : (0, _invariant.default)(false) : void 0;
+
+  var UncontrolledComponent = /*#__PURE__*/function (_React$Component) {
+    (0, _inheritsLoose2.default)(UncontrolledComponent, _React$Component);
+
+    function UncontrolledComponent() {
+      var _this;
+
+      for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
+        args[_key] = arguments[_key];
+      }
+
+      _this = _React$Component.call.apply(_React$Component, [this].concat(args)) || this;
+      _this.handlers = Object.create(null);
+      controlledProps.forEach(function (propName) {
+        var handlerName = controlledValues[propName];
+
+        var handleChange = function handleChange(value) {
+          if (_this.props[handlerName]) {
+            var _this$props;
+
+            _this._notifying = true;
+
+            for (var _len2 = arguments.length, args = new Array(_len2 > 1 ? _len2 - 1 : 0), _key2 = 1; _key2 < _len2; _key2++) {
+              args[_key2 - 1] = arguments[_key2];
+            }
+
+            (_this$props = _this.props)[handlerName].apply(_this$props, [value].concat(args));
+
+            _this._notifying = false;
+          }
+
+          if (!_this.unmounted) _this.setState(function (_ref) {
+            var _extends2;
+
+            var values = _ref.values;
+            return {
+              values: (0, _extends3.default)(Object.create(null), values, (_extends2 = {}, _extends2[propName] = value, _extends2))
+            };
+          });
+        };
+
+        _this.handlers[handlerName] = handleChange;
+      });
+      if (methods.length) _this.attachRef = function (ref) {
+        _this.inner = ref;
+      };
+      var values = Object.create(null);
+      controlledProps.forEach(function (key) {
+        values[key] = _this.props[Utils.defaultKey(key)];
+      });
+      _this.state = {
+        values: values,
+        prevProps: {}
+      };
+      return _this;
+    }
+
+    var _proto = UncontrolledComponent.prototype;
+
+    _proto.shouldComponentUpdate = function shouldComponentUpdate() {
+      //let setState trigger the update
+      return !this._notifying;
+    };
+
+    UncontrolledComponent.getDerivedStateFromProps = function getDerivedStateFromProps(props, _ref2) {
+      var values = _ref2.values,
+          prevProps = _ref2.prevProps;
+      var nextState = {
+        values: (0, _extends3.default)(Object.create(null), values),
+        prevProps: {}
+      };
+      controlledProps.forEach(function (key) {
+        /**
+         * If a prop switches from controlled to Uncontrolled
+         * reset its value to the defaultValue
+         */
+        nextState.prevProps[key] = props[key];
+
+        if (!Utils.isProp(props, key) && Utils.isProp(prevProps, key)) {
+          nextState.values[key] = props[Utils.defaultKey(key)];
+        }
+      });
+      return nextState;
+    };
+
+    _proto.componentWillUnmount = function componentWillUnmount() {
+      this.unmounted = true;
+    };
+
+    _proto.render = function render() {
+      var _this2 = this;
+
+      var _this$props2 = this.props,
+          innerRef = _this$props2.innerRef,
+          props = (0, _objectWithoutPropertiesLoose2.default)(_this$props2, ["innerRef"]);
+      PROPS_TO_OMIT.forEach(function (prop) {
+        delete props[prop];
+      });
+      var newProps = {};
+      controlledProps.forEach(function (propName) {
+        var propValue = _this2.props[propName];
+        newProps[propName] = propValue !== undefined ? propValue : _this2.state.values[propName];
+      });
+      return _react.default.createElement(Component, (0, _extends3.default)({}, props, newProps, this.handlers, {
+        ref: innerRef || this.attachRef
+      }));
+    };
+
+    return UncontrolledComponent;
+  }(_react.default.Component);
+
+  (0, _reactLifecyclesCompat.polyfill)(UncontrolledComponent);
+  UncontrolledComponent.displayName = "Uncontrolled(" + displayName + ")";
+  UncontrolledComponent.propTypes = (0, _extends3.default)({
+    innerRef: function innerRef() {}
+  }, Utils.uncontrolledPropTypes(controlledValues, displayName));
+  methods.forEach(function (method) {
+    UncontrolledComponent.prototype[method] = function $proxiedMethod() {
+      var _this$inner;
+
+      return (_this$inner = this.inner)[method].apply(_this$inner, arguments);
+    };
+  });
+  var WrappedComponent = UncontrolledComponent;
+
+  if (_react.default.forwardRef) {
+    WrappedComponent = _react.default.forwardRef(function (props, ref) {
+      return _react.default.createElement(UncontrolledComponent, (0, _extends3.default)({}, props, {
+        innerRef: ref
+      }));
+    });
+    WrappedComponent.propTypes = UncontrolledComponent.propTypes;
+  }
+
+  WrappedComponent.ControlledComponent = Component;
+  /**
+   * useful when wrapping a Component and you want to control
+   * everything
+   */
+
+  WrappedComponent.deferControlTo = function (newComponent, additions, nextMethods) {
+    if (additions === void 0) {
+      additions = {};
+    }
+
+    return uncontrollable(newComponent, (0, _extends3.default)({}, controlledValues, additions), nextMethods);
+  };
+
+  return WrappedComponent;
+}
+},{"@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/inheritsLoose":"../node_modules/@babel/runtime/helpers/esm/inheritsLoose.js","react":"../node_modules/react/index.js","react-lifecycles-compat":"../node_modules/react-lifecycles-compat/react-lifecycles-compat.es.js","invariant":"../node_modules/invariant/browser.js","./utils":"../node_modules/uncontrollable/esm/utils.js"}],"../node_modules/uncontrollable/esm/index.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+Object.defineProperty(exports, "useUncontrolled", {
+  enumerable: true,
+  get: function () {
+    return _hook.default;
+  }
+});
+Object.defineProperty(exports, "uncontrollable", {
+  enumerable: true,
+  get: function () {
+    return _uncontrollable.default;
+  }
+});
+
+var _hook = _interopRequireDefault(require("./hook.js"));
+
+var _uncontrollable = _interopRequireDefault(require("./uncontrollable.js"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+},{"./hook.js":"../node_modules/uncontrollable/esm/hook.js","./uncontrollable.js":"../node_modules/uncontrollable/esm/uncontrollable.js"}],"../node_modules/@restart/hooks/esm/useCommittedRef.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _react = require("react");
+
+/**
+ * Creates a `Ref` whose value is updated in an effect, ensuring the most recent
+ * value is the one rendered with. Generally only required for Concurrent mode usage
+ * where previous work in `render()` may be discarded befor being used.
+ *
+ * This is safe to access in an event handler.
+ *
+ * @param value The `Ref` value
+ */
+function useCommittedRef(value) {
+  var ref = (0, _react.useRef)(value);
+  (0, _react.useEffect)(function () {
+    ref.current = value;
+  }, [value]);
+  return ref;
+}
+
+var _default = useCommittedRef;
+exports.default = _default;
+},{"react":"../node_modules/react/index.js"}],"../node_modules/@restart/hooks/esm/useEventCallback.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = useEventCallback;
+
+var _react = require("react");
+
+var _useCommittedRef = _interopRequireDefault(require("./useCommittedRef"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function useEventCallback(fn) {
+  var ref = (0, _useCommittedRef.default)(fn);
+  return (0, _react.useCallback)(function () {
+    return ref.current && ref.current.apply(ref, arguments);
+  }, [ref]);
+}
+},{"react":"../node_modules/react/index.js","./useCommittedRef":"../node_modules/@restart/hooks/esm/useCommittedRef.js"}],"../node_modules/react-bootstrap/esm/utils/divWithClassName.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _extends2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _react = _interopRequireDefault(require("react"));
+
+var _classnames = _interopRequireDefault(require("classnames"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var _default = function _default(className) {
+  return _react.default.forwardRef(function (p, ref) {
+    return _react.default.createElement("div", (0, _extends2.default)({}, p, {
+      ref: ref,
+      className: (0, _classnames.default)(p.className, className)
+    }));
+  });
+};
+
+exports.default = _default;
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","react":"../node_modules/react/index.js","classnames":"../node_modules/classnames/index.js"}],"../node_modules/react-transition-group/esm/config.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+var _default = {
+  disabled: false
+};
+exports.default = _default;
+},{}],"../node_modules/react-transition-group/esm/utils/PropTypes.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.classNamesShape = exports.timeoutsShape = void 0;
+
+var _propTypes = _interopRequireDefault(require("prop-types"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var timeoutsShape = "development" !== 'production' ? _propTypes.default.oneOfType([_propTypes.default.number, _propTypes.default.shape({
+  enter: _propTypes.default.number,
+  exit: _propTypes.default.number,
+  appear: _propTypes.default.number
+}).isRequired]) : null;
+exports.timeoutsShape = timeoutsShape;
+var classNamesShape = "development" !== 'production' ? _propTypes.default.oneOfType([_propTypes.default.string, _propTypes.default.shape({
+  enter: _propTypes.default.string,
+  exit: _propTypes.default.string,
+  active: _propTypes.default.string
+}), _propTypes.default.shape({
+  enter: _propTypes.default.string,
+  enterDone: _propTypes.default.string,
+  enterActive: _propTypes.default.string,
+  exit: _propTypes.default.string,
+  exitDone: _propTypes.default.string,
+  exitActive: _propTypes.default.string
+})]) : null;
+exports.classNamesShape = classNamesShape;
+},{"prop-types":"../node_modules/prop-types/index.js"}],"../node_modules/react-transition-group/esm/TransitionGroupContext.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _react = _interopRequireDefault(require("react"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var _default = _react.default.createContext(null);
+
+exports.default = _default;
+},{"react":"../node_modules/react/index.js"}],"../node_modules/react-transition-group/esm/Transition.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = exports.EXITING = exports.ENTERED = exports.ENTERING = exports.EXITED = exports.UNMOUNTED = void 0;
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _inheritsLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/inheritsLoose"));
+
+var _propTypes = _interopRequireDefault(require("prop-types"));
+
+var _react = _interopRequireDefault(require("react"));
+
+var _reactDom = _interopRequireDefault(require("react-dom"));
+
+var _config = _interopRequireDefault(require("./config"));
+
+var _PropTypes = require("./utils/PropTypes");
+
+var _TransitionGroupContext = _interopRequireDefault(require("./TransitionGroupContext"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var UNMOUNTED = 'unmounted';
+exports.UNMOUNTED = UNMOUNTED;
+var EXITED = 'exited';
+exports.EXITED = EXITED;
+var ENTERING = 'entering';
+exports.ENTERING = ENTERING;
+var ENTERED = 'entered';
+exports.ENTERED = ENTERED;
+var EXITING = 'exiting';
+/**
+ * The Transition component lets you describe a transition from one component
+ * state to another _over time_ with a simple declarative API. Most commonly
+ * it's used to animate the mounting and unmounting of a component, but can also
+ * be used to describe in-place transition states as well.
+ *
+ * ---
+ *
+ * **Note**: `Transition` is a platform-agnostic base component. If you're using
+ * transitions in CSS, you'll probably want to use
+ * [`CSSTransition`](https://reactcommunity.org/react-transition-group/css-transition)
+ * instead. It inherits all the features of `Transition`, but contains
+ * additional features necessary to play nice with CSS transitions (hence the
+ * name of the component).
+ *
+ * ---
+ *
+ * By default the `Transition` component does not alter the behavior of the
+ * component it renders, it only tracks "enter" and "exit" states for the
+ * components. It's up to you to give meaning and effect to those states. For
+ * example we can add styles to a component when it enters or exits:
+ *
+ * ```jsx
+ * import { Transition } from 'react-transition-group';
+ *
+ * const duration = 300;
+ *
+ * const defaultStyle = {
+ *   transition: `opacity ${duration}ms ease-in-out`,
+ *   opacity: 0,
+ * }
+ *
+ * const transitionStyles = {
+ *   entering: { opacity: 1 },
+ *   entered:  { opacity: 1 },
+ *   exiting:  { opacity: 0 },
+ *   exited:  { opacity: 0 },
+ * };
+ *
+ * const Fade = ({ in: inProp }) => (
+ *   <Transition in={inProp} timeout={duration}>
+ *     {state => (
+ *       <div style={{
+ *         ...defaultStyle,
+ *         ...transitionStyles[state]
+ *       }}>
+ *         I'm a fade Transition!
+ *       </div>
+ *     )}
+ *   </Transition>
+ * );
+ * ```
+ *
+ * There are 4 main states a Transition can be in:
+ *  - `'entering'`
+ *  - `'entered'`
+ *  - `'exiting'`
+ *  - `'exited'`
+ *
+ * Transition state is toggled via the `in` prop. When `true` the component
+ * begins the "Enter" stage. During this stage, the component will shift from
+ * its current transition state, to `'entering'` for the duration of the
+ * transition and then to the `'entered'` stage once it's complete. Let's take
+ * the following example (we'll use the
+ * [useState](https://reactjs.org/docs/hooks-reference.html#usestate) hook):
+ *
+ * ```jsx
+ * function App() {
+ *   const [inProp, setInProp] = useState(false);
+ *   return (
+ *     <div>
+ *       <Transition in={inProp} timeout={500}>
+ *         {state => (
+ *           // ...
+ *         )}
+ *       </Transition>
+ *       <button onClick={() => setInProp(true)}>
+ *         Click to Enter
+ *       </button>
+ *     </div>
+ *   );
+ * }
+ * ```
+ *
+ * When the button is clicked the component will shift to the `'entering'` state
+ * and stay there for 500ms (the value of `timeout`) before it finally switches
+ * to `'entered'`.
+ *
+ * When `in` is `false` the same thing happens except the state moves from
+ * `'exiting'` to `'exited'`.
+ */
+
+exports.EXITING = EXITING;
+
+var Transition = /*#__PURE__*/function (_React$Component) {
+  (0, _inheritsLoose2.default)(Transition, _React$Component);
+
+  function Transition(props, context) {
+    var _this;
+
+    _this = _React$Component.call(this, props, context) || this;
+    var parentGroup = context; // In the context of a TransitionGroup all enters are really appears
+
+    var appear = parentGroup && !parentGroup.isMounting ? props.enter : props.appear;
+    var initialStatus;
+    _this.appearStatus = null;
+
+    if (props.in) {
+      if (appear) {
+        initialStatus = EXITED;
+        _this.appearStatus = ENTERING;
+      } else {
+        initialStatus = ENTERED;
+      }
+    } else {
+      if (props.unmountOnExit || props.mountOnEnter) {
+        initialStatus = UNMOUNTED;
+      } else {
+        initialStatus = EXITED;
+      }
+    }
+
+    _this.state = {
+      status: initialStatus
+    };
+    _this.nextCallback = null;
+    return _this;
+  }
+
+  Transition.getDerivedStateFromProps = function getDerivedStateFromProps(_ref, prevState) {
+    var nextIn = _ref.in;
+
+    if (nextIn && prevState.status === UNMOUNTED) {
+      return {
+        status: EXITED
+      };
+    }
+
+    return null;
+  }; // getSnapshotBeforeUpdate(prevProps) {
+  //   let nextStatus = null
+  //   if (prevProps !== this.props) {
+  //     const { status } = this.state
+  //     if (this.props.in) {
+  //       if (status !== ENTERING && status !== ENTERED) {
+  //         nextStatus = ENTERING
+  //       }
+  //     } else {
+  //       if (status === ENTERING || status === ENTERED) {
+  //         nextStatus = EXITING
+  //       }
+  //     }
+  //   }
+  //   return { nextStatus }
+  // }
+
+
+  var _proto = Transition.prototype;
+
+  _proto.componentDidMount = function componentDidMount() {
+    this.updateStatus(true, this.appearStatus);
+  };
+
+  _proto.componentDidUpdate = function componentDidUpdate(prevProps) {
+    var nextStatus = null;
+
+    if (prevProps !== this.props) {
+      var status = this.state.status;
+
+      if (this.props.in) {
+        if (status !== ENTERING && status !== ENTERED) {
+          nextStatus = ENTERING;
+        }
+      } else {
+        if (status === ENTERING || status === ENTERED) {
+          nextStatus = EXITING;
+        }
+      }
+    }
+
+    this.updateStatus(false, nextStatus);
+  };
+
+  _proto.componentWillUnmount = function componentWillUnmount() {
+    this.cancelNextCallback();
+  };
+
+  _proto.getTimeouts = function getTimeouts() {
+    var timeout = this.props.timeout;
+    var exit, enter, appear;
+    exit = enter = appear = timeout;
+
+    if (timeout != null && typeof timeout !== 'number') {
+      exit = timeout.exit;
+      enter = timeout.enter; // TODO: remove fallback for next major
+
+      appear = timeout.appear !== undefined ? timeout.appear : enter;
+    }
+
+    return {
+      exit: exit,
+      enter: enter,
+      appear: appear
+    };
+  };
+
+  _proto.updateStatus = function updateStatus(mounting, nextStatus) {
+    if (mounting === void 0) {
+      mounting = false;
+    }
+
+    if (nextStatus !== null) {
+      // nextStatus will always be ENTERING or EXITING.
+      this.cancelNextCallback();
+
+      var node = _reactDom.default.findDOMNode(this);
+
+      if (nextStatus === ENTERING) {
+        this.performEnter(node, mounting);
+      } else {
+        this.performExit(node);
+      }
+    } else if (this.props.unmountOnExit && this.state.status === EXITED) {
+      this.setState({
+        status: UNMOUNTED
+      });
+    }
+  };
+
+  _proto.performEnter = function performEnter(node, mounting) {
+    var _this2 = this;
+
+    var enter = this.props.enter;
+    var appearing = this.context ? this.context.isMounting : mounting;
+    var timeouts = this.getTimeouts();
+    var enterTimeout = appearing ? timeouts.appear : timeouts.enter; // no enter animation skip right to ENTERED
+    // if we are mounting and running this it means appear _must_ be set
+
+    if (!mounting && !enter || _config.default.disabled) {
+      this.safeSetState({
+        status: ENTERED
+      }, function () {
+        _this2.props.onEntered(node);
+      });
+      return;
+    }
+
+    this.props.onEnter(node, appearing);
+    this.safeSetState({
+      status: ENTERING
+    }, function () {
+      _this2.props.onEntering(node, appearing);
+
+      _this2.onTransitionEnd(node, enterTimeout, function () {
+        _this2.safeSetState({
+          status: ENTERED
+        }, function () {
+          _this2.props.onEntered(node, appearing);
+        });
+      });
+    });
+  };
+
+  _proto.performExit = function performExit(node) {
+    var _this3 = this;
+
+    var exit = this.props.exit;
+    var timeouts = this.getTimeouts(); // no exit animation skip right to EXITED
+
+    if (!exit || _config.default.disabled) {
+      this.safeSetState({
+        status: EXITED
+      }, function () {
+        _this3.props.onExited(node);
+      });
+      return;
+    }
+
+    this.props.onExit(node);
+    this.safeSetState({
+      status: EXITING
+    }, function () {
+      _this3.props.onExiting(node);
+
+      _this3.onTransitionEnd(node, timeouts.exit, function () {
+        _this3.safeSetState({
+          status: EXITED
+        }, function () {
+          _this3.props.onExited(node);
+        });
+      });
+    });
+  };
+
+  _proto.cancelNextCallback = function cancelNextCallback() {
+    if (this.nextCallback !== null) {
+      this.nextCallback.cancel();
+      this.nextCallback = null;
+    }
+  };
+
+  _proto.safeSetState = function safeSetState(nextState, callback) {
+    // This shouldn't be necessary, but there are weird race conditions with
+    // setState callbacks and unmounting in testing, so always make sure that
+    // we can cancel any pending setState callbacks after we unmount.
+    callback = this.setNextCallback(callback);
+    this.setState(nextState, callback);
+  };
+
+  _proto.setNextCallback = function setNextCallback(callback) {
+    var _this4 = this;
+
+    var active = true;
+
+    this.nextCallback = function (event) {
+      if (active) {
+        active = false;
+        _this4.nextCallback = null;
+        callback(event);
+      }
+    };
+
+    this.nextCallback.cancel = function () {
+      active = false;
+    };
+
+    return this.nextCallback;
+  };
+
+  _proto.onTransitionEnd = function onTransitionEnd(node, timeout, handler) {
+    this.setNextCallback(handler);
+    var doesNotHaveTimeoutOrListener = timeout == null && !this.props.addEndListener;
+
+    if (!node || doesNotHaveTimeoutOrListener) {
+      setTimeout(this.nextCallback, 0);
+      return;
+    }
+
+    if (this.props.addEndListener) {
+      this.props.addEndListener(node, this.nextCallback);
+    }
+
+    if (timeout != null) {
+      setTimeout(this.nextCallback, timeout);
+    }
+  };
+
+  _proto.render = function render() {
+    var status = this.state.status;
+
+    if (status === UNMOUNTED) {
+      return null;
+    }
+
+    var _this$props = this.props,
+        children = _this$props.children,
+        childProps = (0, _objectWithoutPropertiesLoose2.default)(_this$props, ["children"]); // filter props for Transtition
+
+    delete childProps.in;
+    delete childProps.mountOnEnter;
+    delete childProps.unmountOnExit;
+    delete childProps.appear;
+    delete childProps.enter;
+    delete childProps.exit;
+    delete childProps.timeout;
+    delete childProps.addEndListener;
+    delete childProps.onEnter;
+    delete childProps.onEntering;
+    delete childProps.onEntered;
+    delete childProps.onExit;
+    delete childProps.onExiting;
+    delete childProps.onExited;
+
+    if (typeof children === 'function') {
+      // allows for nested Transitions
+      return _react.default.createElement(_TransitionGroupContext.default.Provider, {
+        value: null
+      }, children(status, childProps));
+    }
+
+    var child = _react.default.Children.only(children);
+
+    return (// allows for nested Transitions
+      _react.default.createElement(_TransitionGroupContext.default.Provider, {
+        value: null
+      }, _react.default.cloneElement(child, childProps))
+    );
+  };
+
+  return Transition;
+}(_react.default.Component);
+
+Transition.contextType = _TransitionGroupContext.default;
+Transition.propTypes = "development" !== "production" ? {
+  /**
+   * A `function` child can be used instead of a React element. This function is
+   * called with the current transition status (`'entering'`, `'entered'`,
+   * `'exiting'`, `'exited'`), which can be used to apply context
+   * specific props to a component.
+   *
+   * ```jsx
+   * <Transition in={this.state.in} timeout={150}>
+   *   {state => (
+   *     <MyComponent className={`fade fade-${state}`} />
+   *   )}
+   * </Transition>
+   * ```
+   */
+  children: _propTypes.default.oneOfType([_propTypes.default.func.isRequired, _propTypes.default.element.isRequired]).isRequired,
+
+  /**
+   * Show the component; triggers the enter or exit states
+   */
+  in: _propTypes.default.bool,
+
+  /**
+   * By default the child component is mounted immediately along with
+   * the parent `Transition` component. If you want to "lazy mount" the component on the
+   * first `in={true}` you can set `mountOnEnter`. After the first enter transition the component will stay
+   * mounted, even on "exited", unless you also specify `unmountOnExit`.
+   */
+  mountOnEnter: _propTypes.default.bool,
+
+  /**
+   * By default the child component stays mounted after it reaches the `'exited'` state.
+   * Set `unmountOnExit` if you'd prefer to unmount the component after it finishes exiting.
+   */
+  unmountOnExit: _propTypes.default.bool,
+
+  /**
+   * Normally a component is not transitioned if it is shown when the
+   * `<Transition>` component mounts. If you want to transition on the first
+   * mount set `appear` to `true`, and the component will transition in as soon
+   * as the `<Transition>` mounts.
+   *
+   * > **Note**: there are no special appear states like `appearing`/`appeared`, this prop
+   * > only adds an additional enter transition. However, in the
+   * > `<CSSTransition>` component that first enter transition does result in
+   * > additional `.appear-*` classes, that way you can choose to style it
+   * > differently.
+   */
+  appear: _propTypes.default.bool,
+
+  /**
+   * Enable or disable enter transitions.
+   */
+  enter: _propTypes.default.bool,
+
+  /**
+   * Enable or disable exit transitions.
+   */
+  exit: _propTypes.default.bool,
+
+  /**
+   * The duration of the transition, in milliseconds.
+   * Required unless `addEndListener` is provided.
+   *
+   * You may specify a single timeout for all transitions:
+   *
+   * ```jsx
+   * timeout={500}
+   * ```
+   *
+   * or individually:
+   *
+   * ```jsx
+   * timeout={{
+   *  appear: 500,
+   *  enter: 300,
+   *  exit: 500,
+   * }}
+   * ```
+   *
+   * - `appear` defaults to the value of `enter`
+   * - `enter` defaults to `0`
+   * - `exit` defaults to `0`
+   *
+   * @type {number | { enter?: number, exit?: number, appear?: number }}
+   */
+  timeout: function timeout(props) {
+    var pt = _PropTypes.timeoutsShape;
+    if (!props.addEndListener) pt = pt.isRequired;
+
+    for (var _len = arguments.length, args = new Array(_len > 1 ? _len - 1 : 0), _key = 1; _key < _len; _key++) {
+      args[_key - 1] = arguments[_key];
+    }
+
+    return pt.apply(void 0, [props].concat(args));
+  },
+
+  /**
+   * Add a custom transition end trigger. Called with the transitioning
+   * DOM node and a `done` callback. Allows for more fine grained transition end
+   * logic. **Note:** Timeouts are still used as a fallback if provided.
+   *
+   * ```jsx
+   * addEndListener={(node, done) => {
+   *   // use the css transitionend event to mark the finish of a transition
+   *   node.addEventListener('transitionend', done, false);
+   * }}
+   * ```
+   */
+  addEndListener: _propTypes.default.func,
+
+  /**
+   * Callback fired before the "entering" status is applied. An extra parameter
+   * `isAppearing` is supplied to indicate if the enter stage is occurring on the initial mount
+   *
+   * @type Function(node: HtmlElement, isAppearing: bool) -> void
+   */
+  onEnter: _propTypes.default.func,
+
+  /**
+   * Callback fired after the "entering" status is applied. An extra parameter
+   * `isAppearing` is supplied to indicate if the enter stage is occurring on the initial mount
+   *
+   * @type Function(node: HtmlElement, isAppearing: bool)
+   */
+  onEntering: _propTypes.default.func,
+
+  /**
+   * Callback fired after the "entered" status is applied. An extra parameter
+   * `isAppearing` is supplied to indicate if the enter stage is occurring on the initial mount
+   *
+   * @type Function(node: HtmlElement, isAppearing: bool) -> void
+   */
+  onEntered: _propTypes.default.func,
+
+  /**
+   * Callback fired before the "exiting" status is applied.
+   *
+   * @type Function(node: HtmlElement) -> void
+   */
+  onExit: _propTypes.default.func,
+
+  /**
+   * Callback fired after the "exiting" status is applied.
+   *
+   * @type Function(node: HtmlElement) -> void
+   */
+  onExiting: _propTypes.default.func,
+
+  /**
+   * Callback fired after the "exited" status is applied.
+   *
+   * @type Function(node: HtmlElement) -> void
+   */
+  onExited: _propTypes.default.func // Name the function so it is clearer in the documentation
+
+} : {};
+
+function noop() {}
+
+Transition.defaultProps = {
+  in: false,
+  mountOnEnter: false,
+  unmountOnExit: false,
+  appear: false,
+  enter: true,
+  exit: true,
+  onEnter: noop,
+  onEntering: noop,
+  onEntered: noop,
+  onExit: noop,
+  onExiting: noop,
+  onExited: noop
+};
+Transition.UNMOUNTED = 0;
+Transition.EXITED = 1;
+Transition.ENTERING = 2;
+Transition.ENTERED = 3;
+Transition.EXITING = 4;
+var _default = Transition;
+exports.default = _default;
+},{"@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","@babel/runtime/helpers/esm/inheritsLoose":"../node_modules/@babel/runtime/helpers/esm/inheritsLoose.js","prop-types":"../node_modules/prop-types/index.js","react":"../node_modules/react/index.js","react-dom":"../node_modules/react-dom/index.js","./config":"../node_modules/react-transition-group/esm/config.js","./utils/PropTypes":"../node_modules/react-transition-group/esm/utils/PropTypes.js","./TransitionGroupContext":"../node_modules/react-transition-group/esm/TransitionGroupContext.js"}],"../node_modules/@babel/runtime/helpers/interopRequireDefault.js":[function(require,module,exports) {
+function _interopRequireDefault(obj) {
+  return obj && obj.__esModule ? obj : {
+    "default": obj
+  };
+}
+
+module.exports = _interopRequireDefault;
+},{}],"../node_modules/dom-helpers/util/inDOM.js":[function(require,module,exports) {
+"use strict";
+
+exports.__esModule = true;
+exports.default = void 0;
+
+var _default = !!(typeof window !== 'undefined' && window.document && window.document.createElement);
+
+exports.default = _default;
+module.exports = exports["default"];
+},{}],"../node_modules/dom-helpers/transition/properties.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = exports.animationEnd = exports.animationDelay = exports.animationTiming = exports.animationDuration = exports.animationName = exports.transitionEnd = exports.transitionDuration = exports.transitionDelay = exports.transitionTiming = exports.transitionProperty = exports.transform = void 0;
+
+var _inDOM = _interopRequireDefault(require("../util/inDOM"));
+
+var transform = 'transform';
+exports.transform = transform;
+var prefix, transitionEnd, animationEnd;
+exports.animationEnd = animationEnd;
+exports.transitionEnd = transitionEnd;
+var transitionProperty, transitionDuration, transitionTiming, transitionDelay;
+exports.transitionDelay = transitionDelay;
+exports.transitionTiming = transitionTiming;
+exports.transitionDuration = transitionDuration;
+exports.transitionProperty = transitionProperty;
+var animationName, animationDuration, animationTiming, animationDelay;
+exports.animationDelay = animationDelay;
+exports.animationTiming = animationTiming;
+exports.animationDuration = animationDuration;
+exports.animationName = animationName;
+
+if (_inDOM.default) {
+  var _getTransitionPropert = getTransitionProperties();
+
+  prefix = _getTransitionPropert.prefix;
+  exports.transitionEnd = transitionEnd = _getTransitionPropert.transitionEnd;
+  exports.animationEnd = animationEnd = _getTransitionPropert.animationEnd;
+  exports.transform = transform = prefix + "-" + transform;
+  exports.transitionProperty = transitionProperty = prefix + "-transition-property";
+  exports.transitionDuration = transitionDuration = prefix + "-transition-duration";
+  exports.transitionDelay = transitionDelay = prefix + "-transition-delay";
+  exports.transitionTiming = transitionTiming = prefix + "-transition-timing-function";
+  exports.animationName = animationName = prefix + "-animation-name";
+  exports.animationDuration = animationDuration = prefix + "-animation-duration";
+  exports.animationTiming = animationTiming = prefix + "-animation-delay";
+  exports.animationDelay = animationDelay = prefix + "-animation-timing-function";
+}
+
+var _default = {
+  transform: transform,
+  end: transitionEnd,
+  property: transitionProperty,
+  timing: transitionTiming,
+  delay: transitionDelay,
+  duration: transitionDuration
+};
+exports.default = _default;
+
+function getTransitionProperties() {
+  var style = document.createElement('div').style;
+  var vendorMap = {
+    O: function O(e) {
+      return "o" + e.toLowerCase();
+    },
+    Moz: function Moz(e) {
+      return e.toLowerCase();
+    },
+    Webkit: function Webkit(e) {
+      return "webkit" + e;
+    },
+    ms: function ms(e) {
+      return "MS" + e;
+    }
+  };
+  var vendors = Object.keys(vendorMap);
+  var transitionEnd, animationEnd;
+  var prefix = '';
+
+  for (var i = 0; i < vendors.length; i++) {
+    var vendor = vendors[i];
+
+    if (vendor + "TransitionProperty" in style) {
+      prefix = "-" + vendor.toLowerCase();
+      transitionEnd = vendorMap[vendor]('TransitionEnd');
+      animationEnd = vendorMap[vendor]('AnimationEnd');
+      break;
+    }
+  }
+
+  if (!transitionEnd && 'transitionProperty' in style) transitionEnd = 'transitionend';
+  if (!animationEnd && 'animationName' in style) animationEnd = 'animationend';
+  style = null;
+  return {
+    animationEnd: animationEnd,
+    transitionEnd: transitionEnd,
+    prefix: prefix
+  };
+}
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","../util/inDOM":"../node_modules/dom-helpers/util/inDOM.js"}],"../node_modules/dom-helpers/util/camelizeStyle.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = camelizeStyleName;
+
+var _camelize = _interopRequireDefault(require("./camelize"));
+
+/**
+ * Copyright 2014-2015, Facebook, Inc.
+ * All rights reserved.
+ * https://github.com/facebook/react/blob/2aeb8a2a6beb00617a4217f7f8284924fa2ad819/src/vendor/core/camelizeStyleName.js
+ */
+var msPattern = /^-ms-/;
+
+function camelizeStyleName(string) {
+  return (0, _camelize.default)(string.replace(msPattern, 'ms-'));
+}
+
+module.exports = exports["default"];
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","./camelize":"../node_modules/dom-helpers/util/camelize.js"}],"../node_modules/dom-helpers/util/hyphenate.js":[function(require,module,exports) {
+"use strict";
+
+exports.__esModule = true;
+exports.default = hyphenate;
+var rUpper = /([A-Z])/g;
+
+function hyphenate(string) {
+  return string.replace(rUpper, '-$1').toLowerCase();
+}
+
+module.exports = exports["default"];
+},{}],"../node_modules/dom-helpers/util/hyphenateStyle.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = hyphenateStyleName;
+
+var _hyphenate = _interopRequireDefault(require("./hyphenate"));
+
+/**
+ * Copyright 2013-2014, Facebook, Inc.
+ * All rights reserved.
+ * https://github.com/facebook/react/blob/2aeb8a2a6beb00617a4217f7f8284924fa2ad819/src/vendor/core/hyphenateStyleName.js
+ */
+var msPattern = /^ms-/;
+
+function hyphenateStyleName(string) {
+  return (0, _hyphenate.default)(string).replace(msPattern, '-ms-');
+}
+
+module.exports = exports["default"];
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","./hyphenate":"../node_modules/dom-helpers/util/hyphenate.js"}],"../node_modules/dom-helpers/style/getComputedStyle.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = _getComputedStyle;
+
+var _camelizeStyle = _interopRequireDefault(require("../util/camelizeStyle"));
+
+var rposition = /^(top|right|bottom|left)$/;
+var rnumnonpx = /^([+-]?(?:\d*\.|)\d+(?:[eE][+-]?\d+|))(?!px)[a-z%]+$/i;
+
+function _getComputedStyle(node) {
+  if (!node) throw new TypeError('No Element passed to `getComputedStyle()`');
+  var doc = node.ownerDocument;
+  return 'defaultView' in doc ? doc.defaultView.opener ? node.ownerDocument.defaultView.getComputedStyle(node, null) : window.getComputedStyle(node, null) : {
+    //ie 8 "magic" from: https://github.com/jquery/jquery/blob/1.11-stable/src/css/curCSS.js#L72
+    getPropertyValue: function getPropertyValue(prop) {
+      var style = node.style;
+      prop = (0, _camelizeStyle.default)(prop);
+      if (prop == 'float') prop = 'styleFloat';
+      var current = node.currentStyle[prop] || null;
+      if (current == null && style && style[prop]) current = style[prop];
+
+      if (rnumnonpx.test(current) && !rposition.test(prop)) {
+        // Remember the original values
+        var left = style.left;
+        var runStyle = node.runtimeStyle;
+        var rsLeft = runStyle && runStyle.left; // Put in the new values to get a computed value out
+
+        if (rsLeft) runStyle.left = node.currentStyle.left;
+        style.left = prop === 'fontSize' ? '1em' : current;
+        current = style.pixelLeft + 'px'; // Revert the changed values
+
+        style.left = left;
+        if (rsLeft) runStyle.left = rsLeft;
+      }
+
+      return current;
+    }
+  };
+}
+
+module.exports = exports["default"];
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","../util/camelizeStyle":"../node_modules/dom-helpers/util/camelizeStyle.js"}],"../node_modules/dom-helpers/style/removeStyle.js":[function(require,module,exports) {
+"use strict";
+
+exports.__esModule = true;
+exports.default = removeStyle;
+
+function removeStyle(node, key) {
+  return 'removeProperty' in node.style ? node.style.removeProperty(key) : node.style.removeAttribute(key);
+}
+
+module.exports = exports["default"];
+},{}],"../node_modules/dom-helpers/transition/isTransform.js":[function(require,module,exports) {
+"use strict";
+
+exports.__esModule = true;
+exports.default = isTransform;
+var supportedTransforms = /^((translate|rotate|scale)(X|Y|Z|3d)?|matrix(3d)?|perspective|skew(X|Y)?)$/i;
+
+function isTransform(property) {
+  return !!(property && supportedTransforms.test(property));
+}
+
+module.exports = exports["default"];
+},{}],"../node_modules/dom-helpers/style/index.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = style;
+
+var _camelizeStyle = _interopRequireDefault(require("../util/camelizeStyle"));
+
+var _hyphenateStyle = _interopRequireDefault(require("../util/hyphenateStyle"));
+
+var _getComputedStyle2 = _interopRequireDefault(require("./getComputedStyle"));
+
+var _removeStyle = _interopRequireDefault(require("./removeStyle"));
+
+var _properties = require("../transition/properties");
+
+var _isTransform = _interopRequireDefault(require("../transition/isTransform"));
+
+function style(node, property, value) {
+  var css = '';
+  var transforms = '';
+  var props = property;
+
+  if (typeof property === 'string') {
+    if (value === undefined) {
+      return node.style[(0, _camelizeStyle.default)(property)] || (0, _getComputedStyle2.default)(node).getPropertyValue((0, _hyphenateStyle.default)(property));
+    } else {
+      (props = {})[property] = value;
+    }
+  }
+
+  Object.keys(props).forEach(function (key) {
+    var value = props[key];
+
+    if (!value && value !== 0) {
+      (0, _removeStyle.default)(node, (0, _hyphenateStyle.default)(key));
+    } else if ((0, _isTransform.default)(key)) {
+      transforms += key + "(" + value + ") ";
+    } else {
+      css += (0, _hyphenateStyle.default)(key) + ": " + value + ";";
+    }
+  });
+
+  if (transforms) {
+    css += _properties.transform + ": " + transforms + ";";
+  }
+
+  node.style.cssText += ';' + css;
+}
+
+module.exports = exports["default"];
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","../util/camelizeStyle":"../node_modules/dom-helpers/util/camelizeStyle.js","../util/hyphenateStyle":"../node_modules/dom-helpers/util/hyphenateStyle.js","./getComputedStyle":"../node_modules/dom-helpers/style/getComputedStyle.js","./removeStyle":"../node_modules/dom-helpers/style/removeStyle.js","../transition/properties":"../node_modules/dom-helpers/transition/properties.js","../transition/isTransform":"../node_modules/dom-helpers/transition/isTransform.js"}],"../node_modules/dom-helpers/transition/end.js":[function(require,module,exports) {
+"use strict";
+
+var _interopRequireDefault = require("@babel/runtime/helpers/interopRequireDefault");
+
+exports.__esModule = true;
+exports.default = void 0;
+
+var _properties = _interopRequireDefault(require("./properties"));
+
+var _style = _interopRequireDefault(require("../style"));
+
+function onEnd(node, handler, duration) {
+  var fakeEvent = {
+    target: node,
+    currentTarget: node
+  },
+      backup;
+  if (!_properties.default.end) duration = 0;else if (duration == null) duration = parseDuration(node) || 0;
+
+  if (_properties.default.end) {
+    node.addEventListener(_properties.default.end, done, false);
+    backup = setTimeout(function () {
+      return done(fakeEvent);
+    }, (duration || 100) * 1.5);
+  } else setTimeout(done.bind(null, fakeEvent), 0);
+
+  function done(event) {
+    if (event.target !== event.currentTarget) return;
+    clearTimeout(backup);
+    event.target.removeEventListener(_properties.default.end, done);
+    handler.call(this);
+  }
+}
+
+onEnd._parseDuration = parseDuration;
+var _default = onEnd;
+exports.default = _default;
+
+function parseDuration(node) {
+  var str = (0, _style.default)(node, _properties.default.duration),
+      mult = str.indexOf('ms') === -1 ? 1000 : 1;
+  return parseFloat(str) * mult;
+}
+
+module.exports = exports["default"];
+},{"@babel/runtime/helpers/interopRequireDefault":"../node_modules/@babel/runtime/helpers/interopRequireDefault.js","./properties":"../node_modules/dom-helpers/transition/properties.js","../style":"../node_modules/dom-helpers/style/index.js"}],"../node_modules/react-bootstrap/esm/utils/triggerBrowserReflow.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = triggerBrowserReflow;
+
+// reading a dimension prop will cause the browser to recalculate,
+// which will let our animations work
+function triggerBrowserReflow(node) {
+  node.offsetHeight; // eslint-disable-line no-unused-expressions
+}
+},{}],"../node_modules/react-bootstrap/esm/Fade.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _extends2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _classnames = _interopRequireDefault(require("classnames"));
+
+var _react = _interopRequireWildcard(require("react"));
+
+var _Transition = _interopRequireWildcard(require("react-transition-group/Transition"));
+
+var _end = _interopRequireDefault(require("dom-helpers/transition/end"));
+
+var _triggerBrowserReflow = _interopRequireDefault(require("./utils/triggerBrowserReflow"));
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function () { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var _fadeStyles;
+
+var defaultProps = {
+  in: false,
+  timeout: 300,
+  mountOnEnter: false,
+  unmountOnExit: false,
+  appear: false
+};
+var fadeStyles = (_fadeStyles = {}, _fadeStyles[_Transition.ENTERING] = 'show', _fadeStyles[_Transition.ENTERED] = 'show', _fadeStyles);
+
+var Fade = _react.default.forwardRef(function (_ref, ref) {
+  var className = _ref.className,
+      children = _ref.children,
+      props = (0, _objectWithoutPropertiesLoose2.default)(_ref, ["className", "children"]);
+  var handleEnter = (0, _react.useCallback)(function (node) {
+    (0, _triggerBrowserReflow.default)(node);
+    if (props.onEnter) props.onEnter(node);
+  }, [props]);
+  return _react.default.createElement(_Transition.default, (0, _extends2.default)({
+    ref: ref,
+    addEndListener: _end.default
+  }, props, {
+    onEnter: handleEnter
+  }), function (status, innerProps) {
+    return _react.default.cloneElement(children, (0, _extends2.default)({}, innerProps, {
+      className: (0, _classnames.default)('fade', className, children.props.className, fadeStyles[status])
+    }));
+  });
+});
+
+Fade.defaultProps = defaultProps;
+Fade.displayName = 'Fade';
+var _default = Fade;
+exports.default = _default;
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","react-transition-group/Transition":"../node_modules/react-transition-group/esm/Transition.js","dom-helpers/transition/end":"../node_modules/dom-helpers/transition/end.js","./utils/triggerBrowserReflow":"../node_modules/react-bootstrap/esm/utils/triggerBrowserReflow.js"}],"../node_modules/react-bootstrap/esm/CloseButton.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _extends2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _propTypes = _interopRequireDefault(require("prop-types"));
+
+var _react = _interopRequireDefault(require("react"));
+
+var _classnames = _interopRequireDefault(require("classnames"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var propTypes = {
+  label: _propTypes.default.string.isRequired,
+  onClick: _propTypes.default.func
+};
+var defaultProps = {
+  label: 'Close'
+};
+
+var CloseButton = _react.default.forwardRef(function (_ref, ref) {
+  var label = _ref.label,
+      onClick = _ref.onClick,
+      className = _ref.className,
+      props = (0, _objectWithoutPropertiesLoose2.default)(_ref, ["label", "onClick", "className"]);
+  return _react.default.createElement("button", (0, _extends2.default)({
+    ref: ref,
+    type: "button",
+    className: (0, _classnames.default)('close', className),
+    onClick: onClick
+  }, props), _react.default.createElement("span", {
+    "aria-hidden": "true"
+  }, "\xD7"), _react.default.createElement("span", {
+    className: "sr-only"
+  }, label));
+});
+
+CloseButton.displayName = 'CloseButton';
+CloseButton.propTypes = propTypes;
+CloseButton.defaultProps = defaultProps;
+var _default = CloseButton;
+exports.default = _default;
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","prop-types":"../node_modules/prop-types/index.js","react":"../node_modules/react/index.js","classnames":"../node_modules/classnames/index.js"}],"../node_modules/react-bootstrap/esm/Alert.js":[function(require,module,exports) {
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
+
+var _extends2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
+
+var _objectWithoutPropertiesLoose2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/objectWithoutPropertiesLoose"));
+
+var _classnames = _interopRequireDefault(require("classnames"));
+
+var _react = _interopRequireDefault(require("react"));
+
+var _uncontrollable = require("uncontrollable");
+
+var _useEventCallback = _interopRequireDefault(require("@restart/hooks/useEventCallback"));
+
+var _createWithBsPrefix = _interopRequireDefault(require("./utils/createWithBsPrefix"));
+
+var _divWithClassName = _interopRequireDefault(require("./utils/divWithClassName"));
+
+var _ThemeProvider = require("./ThemeProvider");
+
+var _Fade = _interopRequireDefault(require("./Fade"));
+
+var _CloseButton = _interopRequireDefault(require("./CloseButton"));
+
+var _SafeAnchor = _interopRequireDefault(require("./SafeAnchor"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+var defaultProps = {
+  show: true,
+  transition: _Fade.default,
+  closeLabel: 'Close alert'
+};
+var controllables = {
+  show: 'onClose'
+};
+
+var Alert = _react.default.forwardRef(function (uncontrolledProps, ref) {
+  var _useUncontrolled = (0, _uncontrollable.useUncontrolled)(uncontrolledProps, controllables),
+      bsPrefix = _useUncontrolled.bsPrefix,
+      show = _useUncontrolled.show,
+      closeLabel = _useUncontrolled.closeLabel,
+      className = _useUncontrolled.className,
+      children = _useUncontrolled.children,
+      variant = _useUncontrolled.variant,
+      onClose = _useUncontrolled.onClose,
+      dismissible = _useUncontrolled.dismissible,
+      Transition = _useUncontrolled.transition,
+      props = (0, _objectWithoutPropertiesLoose2.default)(_useUncontrolled, ["bsPrefix", "show", "closeLabel", "className", "children", "variant", "onClose", "dismissible", "transition"]);
+
+  var prefix = (0, _ThemeProvider.useBootstrapPrefix)(bsPrefix, 'alert');
+  var handleClose = (0, _useEventCallback.default)(function (e) {
+    onClose(false, e);
+  });
+
+  var alert = _react.default.createElement("div", (0, _extends2.default)({
+    role: "alert"
+  }, Transition ? props : undefined, {
+    className: (0, _classnames.default)(className, prefix, variant && prefix + "-" + variant, dismissible && prefix + "-dismissible")
+  }), dismissible && _react.default.createElement(_CloseButton.default, {
+    onClick: handleClose,
+    label: closeLabel
+  }), children);
+
+  if (!Transition) return show ? alert : null;
+  return _react.default.createElement(Transition, (0, _extends2.default)({
+    unmountOnExit: true,
+    ref: ref
+  }, props, {
+    in: show
+  }), alert);
+});
+
+var DivStyledAsH4 = (0, _divWithClassName.default)('h4');
+DivStyledAsH4.displayName = 'DivStyledAsH4';
+Alert.displayName = 'Alert';
+Alert.defaultProps = defaultProps;
+Alert.Link = (0, _createWithBsPrefix.default)('alert-link', {
+  Component: _SafeAnchor.default
+});
+Alert.Heading = (0, _createWithBsPrefix.default)('alert-heading', {
+  Component: DivStyledAsH4
+});
+var _default = Alert;
+exports.default = _default;
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","uncontrollable":"../node_modules/uncontrollable/esm/index.js","@restart/hooks/useEventCallback":"../node_modules/@restart/hooks/esm/useEventCallback.js","./utils/createWithBsPrefix":"../node_modules/react-bootstrap/esm/utils/createWithBsPrefix.js","./utils/divWithClassName":"../node_modules/react-bootstrap/esm/utils/divWithClassName.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js","./Fade":"../node_modules/react-bootstrap/esm/Fade.js","./CloseButton":"../node_modules/react-bootstrap/esm/CloseButton.js","./SafeAnchor":"../node_modules/react-bootstrap/esm/SafeAnchor.js"}],"../node_modules/react-bootstrap/esm/Row.js":[function(require,module,exports) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -35944,79 +37150,443 @@ var Row = _react.default.forwardRef(function (props, ref) {
 Row.defaultProps = defaultProps;
 var _default = Row;
 exports.default = _default;
-},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js"}],"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/bundle-url.js":[function(require,module,exports) {
-var bundleURL = null;
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js"}],"../node_modules/react-css-animated/dist/index.es.js":[function(require,module,exports) {
+"use strict";
 
-function getBundleURLCached() {
-  if (!bundleURL) {
-    bundleURL = getBundleURL();
-  }
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
+exports.default = void 0;
 
-  return bundleURL;
+var _react = _interopRequireWildcard(require("react"));
+
+var _propTypes = _interopRequireDefault(require("prop-types"));
+
+function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+
+function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return null; var cache = new WeakMap(); _getRequireWildcardCache = function () { return cache; }; return cache; }
+
+function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
+
+function createCommonjsModule(fn, module) {
+  return module = {
+    exports: {}
+  }, fn(module, module.exports), module.exports;
 }
 
-function getBundleURL() {
-  // Attempt to find the URL of the current script and use that as the base URL
-  try {
-    throw new Error();
-  } catch (err) {
-    var matches = ('' + err.stack).match(/(https?|file|ftp|chrome-extension|moz-extension):\/\/[^)\n]+/g);
+var classnames = createCommonjsModule(function (module) {
+  /*!
+    Copyright (c) 2017 Jed Watson.
+    Licensed under the MIT License (MIT), see
+    http://jedwatson.github.io/classnames
+  */
 
-    if (matches) {
-      return getBaseURL(matches[0]);
+  /* global define */
+  (function () {
+    var hasOwn = {}.hasOwnProperty;
+
+    function classNames() {
+      var classes = [];
+
+      for (var i = 0; i < arguments.length; i++) {
+        var arg = arguments[i];
+        if (!arg) continue;
+        var argType = typeof arg;
+
+        if (argType === 'string' || argType === 'number') {
+          classes.push(arg);
+        } else if (Array.isArray(arg) && arg.length) {
+          var inner = classNames.apply(null, arg);
+
+          if (inner) {
+            classes.push(inner);
+          }
+        } else if (argType === 'object') {
+          for (var key in arg) {
+            if (hasOwn.call(arg, key) && arg[key]) {
+              classes.push(key);
+            }
+          }
+        }
+      }
+
+      return classes.join(' ');
     }
-  }
 
-  return '/';
-}
+    if ('object' !== 'undefined' && module.exports) {
+      classNames.default = classNames;
+      module.exports = classNames;
+    } else if (typeof undefined === 'function' && typeof undefined.amd === 'object' && undefined.amd) {
+      // register as 'classnames', consistent with npm package name
+      undefined('classnames', [], function () {
+        return classNames;
+      });
+    } else {
+      window.classNames = classNames;
+    }
+  })();
+});
 
-function getBaseURL(url) {
-  return ('' + url).replace(/^((?:https?|file|ftp|chrome-extension|moz-extension):\/\/.+)\/[^/]+$/, '$1') + '/';
-}
+function styleInject(css, ref) {
+  if (ref === void 0) ref = {};
+  var insertAt = ref.insertAt;
 
-exports.getBundleURL = getBundleURLCached;
-exports.getBaseURL = getBaseURL;
-},{}],"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/css-loader.js":[function(require,module,exports) {
-var bundle = require('./bundle-url');
-
-function updateLink(link) {
-  var newLink = link.cloneNode();
-
-  newLink.onload = function () {
-    link.remove();
-  };
-
-  newLink.href = link.href.split('?')[0] + '?' + Date.now();
-  link.parentNode.insertBefore(newLink, link.nextSibling);
-}
-
-var cssTimeout = null;
-
-function reloadCSS() {
-  if (cssTimeout) {
+  if (!css || typeof document === 'undefined') {
     return;
   }
 
-  cssTimeout = setTimeout(function () {
-    var links = document.querySelectorAll('link[rel="stylesheet"]');
+  var head = document.head || document.getElementsByTagName('head')[0];
+  var style = document.createElement('style');
+  style.type = 'text/css';
 
-    for (var i = 0; i < links.length; i++) {
-      if (bundle.getBaseURL(links[i].href) === bundle.getBundleURL()) {
-        updateLink(links[i]);
-      }
+  if (insertAt === 'top') {
+    if (head.firstChild) {
+      head.insertBefore(style, head.firstChild);
+    } else {
+      head.appendChild(style);
     }
+  } else {
+    head.appendChild(style);
+  }
 
-    cssTimeout = null;
-  }, 50);
+  if (style.styleSheet) {
+    style.styleSheet.cssText = css;
+  } else {
+    style.appendChild(document.createTextNode(css));
+  }
 }
 
-module.exports = reloadCSS;
-},{"./bundle-url":"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/bundle-url.js"}],"components/login-view/login-view.scss":[function(require,module,exports) {
-var reloadCSS = require('_css_loader');
+var css = "@charset \"UTF-8\";\n\n/*!\n * animate.css -https://daneden.github.io/animate.css/\n * Version - 3.7.2\n * Licensed under the MIT license - http://opensource.org/licenses/MIT\n *\n * Copyright (c) 2019 Daniel Eden\n */\n\n@-webkit-keyframes animate_bounce__2lrL7 {\n  from,\n  20%,\n  53%,\n  80%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  40%,\n  43% {\n    -webkit-animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    -webkit-transform: translate3d(0, -30px, 0);\n    transform: translate3d(0, -30px, 0);\n  }\n\n  70% {\n    -webkit-animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    -webkit-transform: translate3d(0, -15px, 0);\n    transform: translate3d(0, -15px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, -4px, 0);\n    transform: translate3d(0, -4px, 0);\n  }\n}\n\n@keyframes animate_bounce__2lrL7 {\n  from,\n  20%,\n  53%,\n  80%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  40%,\n  43% {\n    -webkit-animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    -webkit-transform: translate3d(0, -30px, 0);\n    transform: translate3d(0, -30px, 0);\n  }\n\n  70% {\n    -webkit-animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    animation-timing-function: cubic-bezier(0.755, 0.05, 0.855, 0.06);\n    -webkit-transform: translate3d(0, -15px, 0);\n    transform: translate3d(0, -15px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, -4px, 0);\n    transform: translate3d(0, -4px, 0);\n  }\n}\n\n.animate_bounce__2lrL7 {\n  -webkit-animation-name: animate_bounce__2lrL7;\n  animation-name: animate_bounce__2lrL7;\n  -webkit-transform-origin: center bottom;\n  transform-origin: center bottom;\n}\n\n@-webkit-keyframes animate_flash__1cEFo {\n  from,\n  50%,\n  to {\n    opacity: 1;\n  }\n\n  25%,\n  75% {\n    opacity: 0;\n  }\n}\n\n@keyframes animate_flash__1cEFo {\n  from,\n  50%,\n  to {\n    opacity: 1;\n  }\n\n  25%,\n  75% {\n    opacity: 0;\n  }\n}\n\n.animate_flash__1cEFo {\n  -webkit-animation-name: animate_flash__1cEFo;\n  animation-name: animate_flash__1cEFo;\n}\n\n/* originally authored by Nick Pettit - https://github.com/nickpettit/glide */\n\n@-webkit-keyframes animate_pulse__2PvmM {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  50% {\n    -webkit-transform: scale3d(1.05, 1.05, 1.05);\n    transform: scale3d(1.05, 1.05, 1.05);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n@keyframes animate_pulse__2PvmM {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  50% {\n    -webkit-transform: scale3d(1.05, 1.05, 1.05);\n    transform: scale3d(1.05, 1.05, 1.05);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n.animate_pulse__2PvmM {\n  -webkit-animation-name: animate_pulse__2PvmM;\n  animation-name: animate_pulse__2PvmM;\n}\n\n@-webkit-keyframes animate_rubberBand__2EGEd {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  30% {\n    -webkit-transform: scale3d(1.25, 0.75, 1);\n    transform: scale3d(1.25, 0.75, 1);\n  }\n\n  40% {\n    -webkit-transform: scale3d(0.75, 1.25, 1);\n    transform: scale3d(0.75, 1.25, 1);\n  }\n\n  50% {\n    -webkit-transform: scale3d(1.15, 0.85, 1);\n    transform: scale3d(1.15, 0.85, 1);\n  }\n\n  65% {\n    -webkit-transform: scale3d(0.95, 1.05, 1);\n    transform: scale3d(0.95, 1.05, 1);\n  }\n\n  75% {\n    -webkit-transform: scale3d(1.05, 0.95, 1);\n    transform: scale3d(1.05, 0.95, 1);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n@keyframes animate_rubberBand__2EGEd {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  30% {\n    -webkit-transform: scale3d(1.25, 0.75, 1);\n    transform: scale3d(1.25, 0.75, 1);\n  }\n\n  40% {\n    -webkit-transform: scale3d(0.75, 1.25, 1);\n    transform: scale3d(0.75, 1.25, 1);\n  }\n\n  50% {\n    -webkit-transform: scale3d(1.15, 0.85, 1);\n    transform: scale3d(1.15, 0.85, 1);\n  }\n\n  65% {\n    -webkit-transform: scale3d(0.95, 1.05, 1);\n    transform: scale3d(0.95, 1.05, 1);\n  }\n\n  75% {\n    -webkit-transform: scale3d(1.05, 0.95, 1);\n    transform: scale3d(1.05, 0.95, 1);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n.animate_rubberBand__2EGEd {\n  -webkit-animation-name: animate_rubberBand__2EGEd;\n  animation-name: animate_rubberBand__2EGEd;\n}\n\n@-webkit-keyframes animate_shake__2DAZ4 {\n  from,\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  10%,\n  30%,\n  50%,\n  70%,\n  90% {\n    -webkit-transform: translate3d(-10px, 0, 0);\n    transform: translate3d(-10px, 0, 0);\n  }\n\n  20%,\n  40%,\n  60%,\n  80% {\n    -webkit-transform: translate3d(10px, 0, 0);\n    transform: translate3d(10px, 0, 0);\n  }\n}\n\n@keyframes animate_shake__2DAZ4 {\n  from,\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  10%,\n  30%,\n  50%,\n  70%,\n  90% {\n    -webkit-transform: translate3d(-10px, 0, 0);\n    transform: translate3d(-10px, 0, 0);\n  }\n\n  20%,\n  40%,\n  60%,\n  80% {\n    -webkit-transform: translate3d(10px, 0, 0);\n    transform: translate3d(10px, 0, 0);\n  }\n}\n\n.animate_shake__2DAZ4 {\n  -webkit-animation-name: animate_shake__2DAZ4;\n  animation-name: animate_shake__2DAZ4;\n}\n\n@-webkit-keyframes animate_headShake__3XmHP {\n  0% {\n    -webkit-transform: translateX(0);\n    transform: translateX(0);\n  }\n\n  6.5% {\n    -webkit-transform: translateX(-6px) rotateY(-9deg);\n    transform: translateX(-6px) rotateY(-9deg);\n  }\n\n  18.5% {\n    -webkit-transform: translateX(5px) rotateY(7deg);\n    transform: translateX(5px) rotateY(7deg);\n  }\n\n  31.5% {\n    -webkit-transform: translateX(-3px) rotateY(-5deg);\n    transform: translateX(-3px) rotateY(-5deg);\n  }\n\n  43.5% {\n    -webkit-transform: translateX(2px) rotateY(3deg);\n    transform: translateX(2px) rotateY(3deg);\n  }\n\n  50% {\n    -webkit-transform: translateX(0);\n    transform: translateX(0);\n  }\n}\n\n@keyframes animate_headShake__3XmHP {\n  0% {\n    -webkit-transform: translateX(0);\n    transform: translateX(0);\n  }\n\n  6.5% {\n    -webkit-transform: translateX(-6px) rotateY(-9deg);\n    transform: translateX(-6px) rotateY(-9deg);\n  }\n\n  18.5% {\n    -webkit-transform: translateX(5px) rotateY(7deg);\n    transform: translateX(5px) rotateY(7deg);\n  }\n\n  31.5% {\n    -webkit-transform: translateX(-3px) rotateY(-5deg);\n    transform: translateX(-3px) rotateY(-5deg);\n  }\n\n  43.5% {\n    -webkit-transform: translateX(2px) rotateY(3deg);\n    transform: translateX(2px) rotateY(3deg);\n  }\n\n  50% {\n    -webkit-transform: translateX(0);\n    transform: translateX(0);\n  }\n}\n\n.animate_headShake__3XmHP {\n  -webkit-animation-timing-function: ease-in-out;\n  animation-timing-function: ease-in-out;\n  -webkit-animation-name: animate_headShake__3XmHP;\n  animation-name: animate_headShake__3XmHP;\n}\n\n@-webkit-keyframes animate_swing__3C_jC {\n  20% {\n    -webkit-transform: rotate3d(0, 0, 1, 15deg);\n    transform: rotate3d(0, 0, 1, 15deg);\n  }\n\n  40% {\n    -webkit-transform: rotate3d(0, 0, 1, -10deg);\n    transform: rotate3d(0, 0, 1, -10deg);\n  }\n\n  60% {\n    -webkit-transform: rotate3d(0, 0, 1, 5deg);\n    transform: rotate3d(0, 0, 1, 5deg);\n  }\n\n  80% {\n    -webkit-transform: rotate3d(0, 0, 1, -5deg);\n    transform: rotate3d(0, 0, 1, -5deg);\n  }\n\n  to {\n    -webkit-transform: rotate3d(0, 0, 1, 0deg);\n    transform: rotate3d(0, 0, 1, 0deg);\n  }\n}\n\n@keyframes animate_swing__3C_jC {\n  20% {\n    -webkit-transform: rotate3d(0, 0, 1, 15deg);\n    transform: rotate3d(0, 0, 1, 15deg);\n  }\n\n  40% {\n    -webkit-transform: rotate3d(0, 0, 1, -10deg);\n    transform: rotate3d(0, 0, 1, -10deg);\n  }\n\n  60% {\n    -webkit-transform: rotate3d(0, 0, 1, 5deg);\n    transform: rotate3d(0, 0, 1, 5deg);\n  }\n\n  80% {\n    -webkit-transform: rotate3d(0, 0, 1, -5deg);\n    transform: rotate3d(0, 0, 1, -5deg);\n  }\n\n  to {\n    -webkit-transform: rotate3d(0, 0, 1, 0deg);\n    transform: rotate3d(0, 0, 1, 0deg);\n  }\n}\n\n.animate_swing__3C_jC {\n  -webkit-transform-origin: top center;\n  transform-origin: top center;\n  -webkit-animation-name: animate_swing__3C_jC;\n  animation-name: animate_swing__3C_jC;\n}\n\n@-webkit-keyframes animate_tada__Qt5PH {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  10%,\n  20% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);\n    transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);\n  }\n\n  30%,\n  50%,\n  70%,\n  90% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);\n    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);\n  }\n\n  40%,\n  60%,\n  80% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);\n    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n@keyframes animate_tada__Qt5PH {\n  from {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n\n  10%,\n  20% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);\n    transform: scale3d(0.9, 0.9, 0.9) rotate3d(0, 0, 1, -3deg);\n  }\n\n  30%,\n  50%,\n  70%,\n  90% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);\n    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, 3deg);\n  }\n\n  40%,\n  60%,\n  80% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);\n    transform: scale3d(1.1, 1.1, 1.1) rotate3d(0, 0, 1, -3deg);\n  }\n\n  to {\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n.animate_tada__Qt5PH {\n  -webkit-animation-name: animate_tada__Qt5PH;\n  animation-name: animate_tada__Qt5PH;\n}\n\n/* originally authored by Nick Pettit - https://github.com/nickpettit/glide */\n\n@-webkit-keyframes animate_wobble__SKKSi {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  15% {\n    -webkit-transform: translate3d(-25%, 0, 0) rotate3d(0, 0, 1, -5deg);\n    transform: translate3d(-25%, 0, 0) rotate3d(0, 0, 1, -5deg);\n  }\n\n  30% {\n    -webkit-transform: translate3d(20%, 0, 0) rotate3d(0, 0, 1, 3deg);\n    transform: translate3d(20%, 0, 0) rotate3d(0, 0, 1, 3deg);\n  }\n\n  45% {\n    -webkit-transform: translate3d(-15%, 0, 0) rotate3d(0, 0, 1, -3deg);\n    transform: translate3d(-15%, 0, 0) rotate3d(0, 0, 1, -3deg);\n  }\n\n  60% {\n    -webkit-transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg);\n    transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg);\n  }\n\n  75% {\n    -webkit-transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg);\n    transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_wobble__SKKSi {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  15% {\n    -webkit-transform: translate3d(-25%, 0, 0) rotate3d(0, 0, 1, -5deg);\n    transform: translate3d(-25%, 0, 0) rotate3d(0, 0, 1, -5deg);\n  }\n\n  30% {\n    -webkit-transform: translate3d(20%, 0, 0) rotate3d(0, 0, 1, 3deg);\n    transform: translate3d(20%, 0, 0) rotate3d(0, 0, 1, 3deg);\n  }\n\n  45% {\n    -webkit-transform: translate3d(-15%, 0, 0) rotate3d(0, 0, 1, -3deg);\n    transform: translate3d(-15%, 0, 0) rotate3d(0, 0, 1, -3deg);\n  }\n\n  60% {\n    -webkit-transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg);\n    transform: translate3d(10%, 0, 0) rotate3d(0, 0, 1, 2deg);\n  }\n\n  75% {\n    -webkit-transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg);\n    transform: translate3d(-5%, 0, 0) rotate3d(0, 0, 1, -1deg);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_wobble__SKKSi {\n  -webkit-animation-name: animate_wobble__SKKSi;\n  animation-name: animate_wobble__SKKSi;\n}\n\n@-webkit-keyframes animate_jello__1vLIG {\n  from,\n  11.1%,\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  22.2% {\n    -webkit-transform: skewX(-12.5deg) skewY(-12.5deg);\n    transform: skewX(-12.5deg) skewY(-12.5deg);\n  }\n\n  33.3% {\n    -webkit-transform: skewX(6.25deg) skewY(6.25deg);\n    transform: skewX(6.25deg) skewY(6.25deg);\n  }\n\n  44.4% {\n    -webkit-transform: skewX(-3.125deg) skewY(-3.125deg);\n    transform: skewX(-3.125deg) skewY(-3.125deg);\n  }\n\n  55.5% {\n    -webkit-transform: skewX(1.5625deg) skewY(1.5625deg);\n    transform: skewX(1.5625deg) skewY(1.5625deg);\n  }\n\n  66.6% {\n    -webkit-transform: skewX(-0.78125deg) skewY(-0.78125deg);\n    transform: skewX(-0.78125deg) skewY(-0.78125deg);\n  }\n\n  77.7% {\n    -webkit-transform: skewX(0.390625deg) skewY(0.390625deg);\n    transform: skewX(0.390625deg) skewY(0.390625deg);\n  }\n\n  88.8% {\n    -webkit-transform: skewX(-0.1953125deg) skewY(-0.1953125deg);\n    transform: skewX(-0.1953125deg) skewY(-0.1953125deg);\n  }\n}\n\n@keyframes animate_jello__1vLIG {\n  from,\n  11.1%,\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  22.2% {\n    -webkit-transform: skewX(-12.5deg) skewY(-12.5deg);\n    transform: skewX(-12.5deg) skewY(-12.5deg);\n  }\n\n  33.3% {\n    -webkit-transform: skewX(6.25deg) skewY(6.25deg);\n    transform: skewX(6.25deg) skewY(6.25deg);\n  }\n\n  44.4% {\n    -webkit-transform: skewX(-3.125deg) skewY(-3.125deg);\n    transform: skewX(-3.125deg) skewY(-3.125deg);\n  }\n\n  55.5% {\n    -webkit-transform: skewX(1.5625deg) skewY(1.5625deg);\n    transform: skewX(1.5625deg) skewY(1.5625deg);\n  }\n\n  66.6% {\n    -webkit-transform: skewX(-0.78125deg) skewY(-0.78125deg);\n    transform: skewX(-0.78125deg) skewY(-0.78125deg);\n  }\n\n  77.7% {\n    -webkit-transform: skewX(0.390625deg) skewY(0.390625deg);\n    transform: skewX(0.390625deg) skewY(0.390625deg);\n  }\n\n  88.8% {\n    -webkit-transform: skewX(-0.1953125deg) skewY(-0.1953125deg);\n    transform: skewX(-0.1953125deg) skewY(-0.1953125deg);\n  }\n}\n\n.animate_jello__1vLIG {\n  -webkit-animation-name: animate_jello__1vLIG;\n  animation-name: animate_jello__1vLIG;\n  -webkit-transform-origin: center;\n  transform-origin: center;\n}\n\n@-webkit-keyframes animate_heartBeat__1jDTN {\n  0% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n\n  14% {\n    -webkit-transform: scale(1.3);\n    transform: scale(1.3);\n  }\n\n  28% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n\n  42% {\n    -webkit-transform: scale(1.3);\n    transform: scale(1.3);\n  }\n\n  70% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n}\n\n@keyframes animate_heartBeat__1jDTN {\n  0% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n\n  14% {\n    -webkit-transform: scale(1.3);\n    transform: scale(1.3);\n  }\n\n  28% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n\n  42% {\n    -webkit-transform: scale(1.3);\n    transform: scale(1.3);\n  }\n\n  70% {\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n}\n\n.animate_heartBeat__1jDTN {\n  -webkit-animation-name: animate_heartBeat__1jDTN;\n  animation-name: animate_heartBeat__1jDTN;\n  -webkit-animation-duration: 1.3s;\n  animation-duration: 1.3s;\n  -webkit-animation-timing-function: ease-in-out;\n  animation-timing-function: ease-in-out;\n}\n\n@-webkit-keyframes animate_bounceIn__A5DKu {\n  from,\n  20%,\n  40%,\n  60%,\n  80%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  20% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1);\n    transform: scale3d(1.1, 1.1, 1.1);\n  }\n\n  40% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9);\n    transform: scale3d(0.9, 0.9, 0.9);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(1.03, 1.03, 1.03);\n    transform: scale3d(1.03, 1.03, 1.03);\n  }\n\n  80% {\n    -webkit-transform: scale3d(0.97, 0.97, 0.97);\n    transform: scale3d(0.97, 0.97, 0.97);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n@keyframes animate_bounceIn__A5DKu {\n  from,\n  20%,\n  40%,\n  60%,\n  80%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  20% {\n    -webkit-transform: scale3d(1.1, 1.1, 1.1);\n    transform: scale3d(1.1, 1.1, 1.1);\n  }\n\n  40% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9);\n    transform: scale3d(0.9, 0.9, 0.9);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(1.03, 1.03, 1.03);\n    transform: scale3d(1.03, 1.03, 1.03);\n  }\n\n  80% {\n    -webkit-transform: scale3d(0.97, 0.97, 0.97);\n    transform: scale3d(0.97, 0.97, 0.97);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: scale3d(1, 1, 1);\n    transform: scale3d(1, 1, 1);\n  }\n}\n\n.animate_bounceIn__A5DKu {\n  -webkit-animation-duration: 0.75s;\n  animation-duration: 0.75s;\n  -webkit-animation-name: animate_bounceIn__A5DKu;\n  animation-name: animate_bounceIn__A5DKu;\n}\n\n@-webkit-keyframes animate_bounceInDown__ZnhIW {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -3000px, 0);\n    transform: translate3d(0, -3000px, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 25px, 0);\n    transform: translate3d(0, 25px, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(0, -10px, 0);\n    transform: translate3d(0, -10px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, 5px, 0);\n    transform: translate3d(0, 5px, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_bounceInDown__ZnhIW {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -3000px, 0);\n    transform: translate3d(0, -3000px, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 25px, 0);\n    transform: translate3d(0, 25px, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(0, -10px, 0);\n    transform: translate3d(0, -10px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, 5px, 0);\n    transform: translate3d(0, 5px, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_bounceInDown__ZnhIW {\n  -webkit-animation-name: animate_bounceInDown__ZnhIW;\n  animation-name: animate_bounceInDown__ZnhIW;\n}\n\n@-webkit-keyframes animate_bounceInLeft__3RKRN {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: translate3d(-3000px, 0, 0);\n    transform: translate3d(-3000px, 0, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(25px, 0, 0);\n    transform: translate3d(25px, 0, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(-10px, 0, 0);\n    transform: translate3d(-10px, 0, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(5px, 0, 0);\n    transform: translate3d(5px, 0, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_bounceInLeft__3RKRN {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  0% {\n    opacity: 0;\n    -webkit-transform: translate3d(-3000px, 0, 0);\n    transform: translate3d(-3000px, 0, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(25px, 0, 0);\n    transform: translate3d(25px, 0, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(-10px, 0, 0);\n    transform: translate3d(-10px, 0, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(5px, 0, 0);\n    transform: translate3d(5px, 0, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_bounceInLeft__3RKRN {\n  -webkit-animation-name: animate_bounceInLeft__3RKRN;\n  animation-name: animate_bounceInLeft__3RKRN;\n}\n\n@-webkit-keyframes animate_bounceInRight__1fPzt {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(3000px, 0, 0);\n    transform: translate3d(3000px, 0, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(-25px, 0, 0);\n    transform: translate3d(-25px, 0, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(10px, 0, 0);\n    transform: translate3d(10px, 0, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(-5px, 0, 0);\n    transform: translate3d(-5px, 0, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_bounceInRight__1fPzt {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(3000px, 0, 0);\n    transform: translate3d(3000px, 0, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(-25px, 0, 0);\n    transform: translate3d(-25px, 0, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(10px, 0, 0);\n    transform: translate3d(10px, 0, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(-5px, 0, 0);\n    transform: translate3d(-5px, 0, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_bounceInRight__1fPzt {\n  -webkit-animation-name: animate_bounceInRight__1fPzt;\n  animation-name: animate_bounceInRight__1fPzt;\n}\n\n@-webkit-keyframes animate_bounceInUp__3be9U {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 3000px, 0);\n    transform: translate3d(0, 3000px, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, -20px, 0);\n    transform: translate3d(0, -20px, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(0, 10px, 0);\n    transform: translate3d(0, 10px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, -5px, 0);\n    transform: translate3d(0, -5px, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_bounceInUp__3be9U {\n  from,\n  60%,\n  75%,\n  90%,\n  to {\n    -webkit-animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n    animation-timing-function: cubic-bezier(0.215, 0.61, 0.355, 1);\n  }\n\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 3000px, 0);\n    transform: translate3d(0, 3000px, 0);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, -20px, 0);\n    transform: translate3d(0, -20px, 0);\n  }\n\n  75% {\n    -webkit-transform: translate3d(0, 10px, 0);\n    transform: translate3d(0, 10px, 0);\n  }\n\n  90% {\n    -webkit-transform: translate3d(0, -5px, 0);\n    transform: translate3d(0, -5px, 0);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_bounceInUp__3be9U {\n  -webkit-animation-name: animate_bounceInUp__3be9U;\n  animation-name: animate_bounceInUp__3be9U;\n}\n\n@-webkit-keyframes animate_bounceOut__1cFbR {\n  20% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9);\n    transform: scale3d(0.9, 0.9, 0.9);\n  }\n\n  50%,\n  55% {\n    opacity: 1;\n    -webkit-transform: scale3d(1.1, 1.1, 1.1);\n    transform: scale3d(1.1, 1.1, 1.1);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n}\n\n@keyframes animate_bounceOut__1cFbR {\n  20% {\n    -webkit-transform: scale3d(0.9, 0.9, 0.9);\n    transform: scale3d(0.9, 0.9, 0.9);\n  }\n\n  50%,\n  55% {\n    opacity: 1;\n    -webkit-transform: scale3d(1.1, 1.1, 1.1);\n    transform: scale3d(1.1, 1.1, 1.1);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n}\n\n.animate_bounceOut__1cFbR {\n  -webkit-animation-duration: 0.75s;\n  animation-duration: 0.75s;\n  -webkit-animation-name: animate_bounceOut__1cFbR;\n  animation-name: animate_bounceOut__1cFbR;\n}\n\n@-webkit-keyframes animate_bounceOutDown__2bUPG {\n  20% {\n    -webkit-transform: translate3d(0, 10px, 0);\n    transform: translate3d(0, 10px, 0);\n  }\n\n  40%,\n  45% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, -20px, 0);\n    transform: translate3d(0, -20px, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n}\n\n@keyframes animate_bounceOutDown__2bUPG {\n  20% {\n    -webkit-transform: translate3d(0, 10px, 0);\n    transform: translate3d(0, 10px, 0);\n  }\n\n  40%,\n  45% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, -20px, 0);\n    transform: translate3d(0, -20px, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n}\n\n.animate_bounceOutDown__2bUPG {\n  -webkit-animation-name: animate_bounceOutDown__2bUPG;\n  animation-name: animate_bounceOutDown__2bUPG;\n}\n\n@-webkit-keyframes animate_bounceOutLeft__2Q63A {\n  20% {\n    opacity: 1;\n    -webkit-transform: translate3d(20px, 0, 0);\n    transform: translate3d(20px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n}\n\n@keyframes animate_bounceOutLeft__2Q63A {\n  20% {\n    opacity: 1;\n    -webkit-transform: translate3d(20px, 0, 0);\n    transform: translate3d(20px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n}\n\n.animate_bounceOutLeft__2Q63A {\n  -webkit-animation-name: animate_bounceOutLeft__2Q63A;\n  animation-name: animate_bounceOutLeft__2Q63A;\n}\n\n@-webkit-keyframes animate_bounceOutRight__360fD {\n  20% {\n    opacity: 1;\n    -webkit-transform: translate3d(-20px, 0, 0);\n    transform: translate3d(-20px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n}\n\n@keyframes animate_bounceOutRight__360fD {\n  20% {\n    opacity: 1;\n    -webkit-transform: translate3d(-20px, 0, 0);\n    transform: translate3d(-20px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n}\n\n.animate_bounceOutRight__360fD {\n  -webkit-animation-name: animate_bounceOutRight__360fD;\n  animation-name: animate_bounceOutRight__360fD;\n}\n\n@-webkit-keyframes animate_bounceOutUp__3XAFf {\n  20% {\n    -webkit-transform: translate3d(0, -10px, 0);\n    transform: translate3d(0, -10px, 0);\n  }\n\n  40%,\n  45% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 20px, 0);\n    transform: translate3d(0, 20px, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n}\n\n@keyframes animate_bounceOutUp__3XAFf {\n  20% {\n    -webkit-transform: translate3d(0, -10px, 0);\n    transform: translate3d(0, -10px, 0);\n  }\n\n  40%,\n  45% {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 20px, 0);\n    transform: translate3d(0, 20px, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n}\n\n.animate_bounceOutUp__3XAFf {\n  -webkit-animation-name: animate_bounceOutUp__3XAFf;\n  animation-name: animate_bounceOutUp__3XAFf;\n}\n\n@-webkit-keyframes animate_fadeIn__3bQIe {\n  from {\n    opacity: 0;\n  }\n\n  to {\n    opacity: 1;\n  }\n}\n\n@keyframes animate_fadeIn__3bQIe {\n  from {\n    opacity: 0;\n  }\n\n  to {\n    opacity: 1;\n  }\n}\n\n.animate_fadeIn__3bQIe {\n  -webkit-animation-name: animate_fadeIn__3bQIe;\n  animation-name: animate_fadeIn__3bQIe;\n}\n\n@-webkit-keyframes animate_fadeInDown__dGqol {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInDown__dGqol {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInDown__dGqol {\n  -webkit-animation-name: animate_fadeInDown__dGqol;\n  animation-name: animate_fadeInDown__dGqol;\n}\n\n@-webkit-keyframes animate_fadeInDownBig__1FQOh {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInDownBig__1FQOh {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInDownBig__1FQOh {\n  -webkit-animation-name: animate_fadeInDownBig__1FQOh;\n  animation-name: animate_fadeInDownBig__1FQOh;\n}\n\n@-webkit-keyframes animate_fadeInLeft__2Rcw5 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInLeft__2Rcw5 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInLeft__2Rcw5 {\n  -webkit-animation-name: animate_fadeInLeft__2Rcw5;\n  animation-name: animate_fadeInLeft__2Rcw5;\n}\n\n@-webkit-keyframes animate_fadeInLeftBig__2VDk0 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInLeftBig__2VDk0 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInLeftBig__2VDk0 {\n  -webkit-animation-name: animate_fadeInLeftBig__2VDk0;\n  animation-name: animate_fadeInLeftBig__2VDk0;\n}\n\n@-webkit-keyframes animate_fadeInRight__uwTeO {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInRight__uwTeO {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInRight__uwTeO {\n  -webkit-animation-name: animate_fadeInRight__uwTeO;\n  animation-name: animate_fadeInRight__uwTeO;\n}\n\n@-webkit-keyframes animate_fadeInRightBig__3Xcl7 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInRightBig__3Xcl7 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInRightBig__3Xcl7 {\n  -webkit-animation-name: animate_fadeInRightBig__3Xcl7;\n  animation-name: animate_fadeInRightBig__3Xcl7;\n}\n\n@-webkit-keyframes animate_fadeInUp__2xZln {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInUp__2xZln {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInUp__2xZln {\n  -webkit-animation-name: animate_fadeInUp__2xZln;\n  animation-name: animate_fadeInUp__2xZln;\n}\n\n@-webkit-keyframes animate_fadeInUpBig__zqLD5 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_fadeInUpBig__zqLD5 {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_fadeInUpBig__zqLD5 {\n  -webkit-animation-name: animate_fadeInUpBig__zqLD5;\n  animation-name: animate_fadeInUpBig__zqLD5;\n}\n\n@-webkit-keyframes animate_fadeOut__1eBhz {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n  }\n}\n\n@keyframes animate_fadeOut__1eBhz {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n  }\n}\n\n.animate_fadeOut__1eBhz {\n  -webkit-animation-name: animate_fadeOut__1eBhz;\n  animation-name: animate_fadeOut__1eBhz;\n}\n\n@-webkit-keyframes animate_fadeOutDown__2VkMZ {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n}\n\n@keyframes animate_fadeOutDown__2VkMZ {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n}\n\n.animate_fadeOutDown__2VkMZ {\n  -webkit-animation-name: animate_fadeOutDown__2VkMZ;\n  animation-name: animate_fadeOutDown__2VkMZ;\n}\n\n@-webkit-keyframes animate_fadeOutDownBig__3TYAD {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n}\n\n@keyframes animate_fadeOutDownBig__3TYAD {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, 2000px, 0);\n    transform: translate3d(0, 2000px, 0);\n  }\n}\n\n.animate_fadeOutDownBig__3TYAD {\n  -webkit-animation-name: animate_fadeOutDownBig__3TYAD;\n  animation-name: animate_fadeOutDownBig__3TYAD;\n}\n\n@-webkit-keyframes animate_fadeOutLeft__2jmiI {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n}\n\n@keyframes animate_fadeOutLeft__2jmiI {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n}\n\n.animate_fadeOutLeft__2jmiI {\n  -webkit-animation-name: animate_fadeOutLeft__2jmiI;\n  animation-name: animate_fadeOutLeft__2jmiI;\n}\n\n@-webkit-keyframes animate_fadeOutLeftBig__1FJrH {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n}\n\n@keyframes animate_fadeOutLeftBig__1FJrH {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(-2000px, 0, 0);\n    transform: translate3d(-2000px, 0, 0);\n  }\n}\n\n.animate_fadeOutLeftBig__1FJrH {\n  -webkit-animation-name: animate_fadeOutLeftBig__1FJrH;\n  animation-name: animate_fadeOutLeftBig__1FJrH;\n}\n\n@-webkit-keyframes animate_fadeOutRight__hdB_e {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n}\n\n@keyframes animate_fadeOutRight__hdB_e {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n}\n\n.animate_fadeOutRight__hdB_e {\n  -webkit-animation-name: animate_fadeOutRight__hdB_e;\n  animation-name: animate_fadeOutRight__hdB_e;\n}\n\n@-webkit-keyframes animate_fadeOutRightBig__2DPtr {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n}\n\n@keyframes animate_fadeOutRightBig__2DPtr {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(2000px, 0, 0);\n    transform: translate3d(2000px, 0, 0);\n  }\n}\n\n.animate_fadeOutRightBig__2DPtr {\n  -webkit-animation-name: animate_fadeOutRightBig__2DPtr;\n  animation-name: animate_fadeOutRightBig__2DPtr;\n}\n\n@-webkit-keyframes animate_fadeOutUp__3e5Sp {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n}\n\n@keyframes animate_fadeOutUp__3e5Sp {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n}\n\n.animate_fadeOutUp__3e5Sp {\n  -webkit-animation-name: animate_fadeOutUp__3e5Sp;\n  animation-name: animate_fadeOutUp__3e5Sp;\n}\n\n@-webkit-keyframes animate_fadeOutUpBig__1jhuD {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n}\n\n@keyframes animate_fadeOutUpBig__1jhuD {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(0, -2000px, 0);\n    transform: translate3d(0, -2000px, 0);\n  }\n}\n\n.animate_fadeOutUpBig__1jhuD {\n  -webkit-animation-name: animate_fadeOutUpBig__1jhuD;\n  animation-name: animate_fadeOutUpBig__1jhuD;\n}\n\n@-webkit-keyframes animate_flip__mEy1R {\n  from {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, -360deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0) rotate3d(0, 1, 0, -360deg);\n    -webkit-animation-timing-function: ease-out;\n    animation-timing-function: ease-out;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -190deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -190deg);\n    -webkit-animation-timing-function: ease-out;\n    animation-timing-function: ease-out;\n  }\n\n  50% {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -170deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -170deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) scale3d(0.95, 0.95, 0.95) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    transform: perspective(400px) scale3d(0.95, 0.95, 0.95) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0) rotate3d(0, 1, 0, 0deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n}\n\n@keyframes animate_flip__mEy1R {\n  from {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, -360deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0) rotate3d(0, 1, 0, -360deg);\n    -webkit-animation-timing-function: ease-out;\n    animation-timing-function: ease-out;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -190deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -190deg);\n    -webkit-animation-timing-function: ease-out;\n    animation-timing-function: ease-out;\n  }\n\n  50% {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -170deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 150px)\n      rotate3d(0, 1, 0, -170deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) scale3d(0.95, 0.95, 0.95) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    transform: perspective(400px) scale3d(0.95, 0.95, 0.95) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0)\n      rotate3d(0, 1, 0, 0deg);\n    transform: perspective(400px) scale3d(1, 1, 1) translate3d(0, 0, 0) rotate3d(0, 1, 0, 0deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n}\n\n.animate_animated__2O131.animate_flip__mEy1R {\n  -webkit-backface-visibility: visible;\n  backface-visibility: visible;\n  -webkit-animation-name: animate_flip__mEy1R;\n  animation-name: animate_flip__mEy1R;\n}\n\n@-webkit-keyframes animate_flipInX__3AYWx {\n  from {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n    opacity: 0;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  60% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 10deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 10deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -5deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -5deg);\n  }\n\n  to {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n}\n\n@keyframes animate_flipInX__3AYWx {\n  from {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n    opacity: 0;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  60% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 10deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 10deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -5deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -5deg);\n  }\n\n  to {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n}\n\n.animate_flipInX__3AYWx {\n  -webkit-backface-visibility: visible !important;\n  backface-visibility: visible !important;\n  -webkit-animation-name: animate_flipInX__3AYWx;\n  animation-name: animate_flipInX__3AYWx;\n}\n\n@-webkit-keyframes animate_flipInY__kBUzo {\n  from {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n    opacity: 0;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -20deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -20deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  60% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 10deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 10deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -5deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -5deg);\n  }\n\n  to {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n}\n\n@keyframes animate_flipInY__kBUzo {\n  from {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n    opacity: 0;\n  }\n\n  40% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -20deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -20deg);\n    -webkit-animation-timing-function: ease-in;\n    animation-timing-function: ease-in;\n  }\n\n  60% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 10deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 10deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -5deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -5deg);\n  }\n\n  to {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n}\n\n.animate_flipInY__kBUzo {\n  -webkit-backface-visibility: visible !important;\n  backface-visibility: visible !important;\n  -webkit-animation-name: animate_flipInY__kBUzo;\n  animation-name: animate_flipInY__kBUzo;\n}\n\n@-webkit-keyframes animate_flipOutX__14JIh {\n  from {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n\n  30% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_flipOutX__14JIh {\n  from {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n\n  30% {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, -20deg);\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    transform: perspective(400px) rotate3d(1, 0, 0, 90deg);\n    opacity: 0;\n  }\n}\n\n.animate_flipOutX__14JIh {\n  -webkit-animation-duration: 0.75s;\n  animation-duration: 0.75s;\n  -webkit-animation-name: animate_flipOutX__14JIh;\n  animation-name: animate_flipOutX__14JIh;\n  -webkit-backface-visibility: visible !important;\n  backface-visibility: visible !important;\n}\n\n@-webkit-keyframes animate_flipOutY__3-fcT {\n  from {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n\n  30% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -15deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -15deg);\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_flipOutY__3-fcT {\n  from {\n    -webkit-transform: perspective(400px);\n    transform: perspective(400px);\n  }\n\n  30% {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, -15deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, -15deg);\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    transform: perspective(400px) rotate3d(0, 1, 0, 90deg);\n    opacity: 0;\n  }\n}\n\n.animate_flipOutY__3-fcT {\n  -webkit-animation-duration: 0.75s;\n  animation-duration: 0.75s;\n  -webkit-backface-visibility: visible !important;\n  backface-visibility: visible !important;\n  -webkit-animation-name: animate_flipOutY__3-fcT;\n  animation-name: animate_flipOutY__3-fcT;\n}\n\n@-webkit-keyframes animate_lightSpeedIn__23y_G {\n  from {\n    -webkit-transform: translate3d(100%, 0, 0) skewX(-30deg);\n    transform: translate3d(100%, 0, 0) skewX(-30deg);\n    opacity: 0;\n  }\n\n  60% {\n    -webkit-transform: skewX(20deg);\n    transform: skewX(20deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: skewX(-5deg);\n    transform: skewX(-5deg);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_lightSpeedIn__23y_G {\n  from {\n    -webkit-transform: translate3d(100%, 0, 0) skewX(-30deg);\n    transform: translate3d(100%, 0, 0) skewX(-30deg);\n    opacity: 0;\n  }\n\n  60% {\n    -webkit-transform: skewX(20deg);\n    transform: skewX(20deg);\n    opacity: 1;\n  }\n\n  80% {\n    -webkit-transform: skewX(-5deg);\n    transform: skewX(-5deg);\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_lightSpeedIn__23y_G {\n  -webkit-animation-name: animate_lightSpeedIn__23y_G;\n  animation-name: animate_lightSpeedIn__23y_G;\n  -webkit-animation-timing-function: ease-out;\n  animation-timing-function: ease-out;\n}\n\n@-webkit-keyframes animate_lightSpeedOut__c7ISu {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: translate3d(100%, 0, 0) skewX(30deg);\n    transform: translate3d(100%, 0, 0) skewX(30deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_lightSpeedOut__c7ISu {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: translate3d(100%, 0, 0) skewX(30deg);\n    transform: translate3d(100%, 0, 0) skewX(30deg);\n    opacity: 0;\n  }\n}\n\n.animate_lightSpeedOut__c7ISu {\n  -webkit-animation-name: animate_lightSpeedOut__c7ISu;\n  animation-name: animate_lightSpeedOut__c7ISu;\n  -webkit-animation-timing-function: ease-in;\n  animation-timing-function: ease-in;\n}\n\n@-webkit-keyframes animate_rotateIn__1rIe1 {\n  from {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: rotate3d(0, 0, 1, -200deg);\n    transform: rotate3d(0, 0, 1, -200deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n@keyframes animate_rotateIn__1rIe1 {\n  from {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: rotate3d(0, 0, 1, -200deg);\n    transform: rotate3d(0, 0, 1, -200deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n.animate_rotateIn__1rIe1 {\n  -webkit-animation-name: animate_rotateIn__1rIe1;\n  animation-name: animate_rotateIn__1rIe1;\n}\n\n@-webkit-keyframes animate_rotateInDownLeft__1Yg3C {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n@keyframes animate_rotateInDownLeft__1Yg3C {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n.animate_rotateInDownLeft__1Yg3C {\n  -webkit-animation-name: animate_rotateInDownLeft__1Yg3C;\n  animation-name: animate_rotateInDownLeft__1Yg3C;\n}\n\n@-webkit-keyframes animate_rotateInDownRight__23mEq {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n@keyframes animate_rotateInDownRight__23mEq {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n.animate_rotateInDownRight__23mEq {\n  -webkit-animation-name: animate_rotateInDownRight__23mEq;\n  animation-name: animate_rotateInDownRight__23mEq;\n}\n\n@-webkit-keyframes animate_rotateInUpLeft__7696c {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n@keyframes animate_rotateInUpLeft__7696c {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n.animate_rotateInUpLeft__7696c {\n  -webkit-animation-name: animate_rotateInUpLeft__7696c;\n  animation-name: animate_rotateInUpLeft__7696c;\n}\n\n@-webkit-keyframes animate_rotateInUpRight__yaDuX {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -90deg);\n    transform: rotate3d(0, 0, 1, -90deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n@keyframes animate_rotateInUpRight__yaDuX {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -90deg);\n    transform: rotate3d(0, 0, 1, -90deg);\n    opacity: 0;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n    opacity: 1;\n  }\n}\n\n.animate_rotateInUpRight__yaDuX {\n  -webkit-animation-name: animate_rotateInUpRight__yaDuX;\n  animation-name: animate_rotateInUpRight__yaDuX;\n}\n\n@-webkit-keyframes animate_rotateOut__3wKvg {\n  from {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: rotate3d(0, 0, 1, 200deg);\n    transform: rotate3d(0, 0, 1, 200deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_rotateOut__3wKvg {\n  from {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: center;\n    transform-origin: center;\n    -webkit-transform: rotate3d(0, 0, 1, 200deg);\n    transform: rotate3d(0, 0, 1, 200deg);\n    opacity: 0;\n  }\n}\n\n.animate_rotateOut__3wKvg {\n  -webkit-animation-name: animate_rotateOut__3wKvg;\n  animation-name: animate_rotateOut__3wKvg;\n}\n\n@-webkit-keyframes animate_rotateOutDownLeft__3ULiD {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_rotateOutDownLeft__3ULiD {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 45deg);\n    transform: rotate3d(0, 0, 1, 45deg);\n    opacity: 0;\n  }\n}\n\n.animate_rotateOutDownLeft__3ULiD {\n  -webkit-animation-name: animate_rotateOutDownLeft__3ULiD;\n  animation-name: animate_rotateOutDownLeft__3ULiD;\n}\n\n@-webkit-keyframes animate_rotateOutDownRight__2Ecbu {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_rotateOutDownRight__2Ecbu {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n}\n\n.animate_rotateOutDownRight__2Ecbu {\n  -webkit-animation-name: animate_rotateOutDownRight__2Ecbu;\n  animation-name: animate_rotateOutDownRight__2Ecbu;\n}\n\n@-webkit-keyframes animate_rotateOutUpLeft__3Bn0k {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_rotateOutUpLeft__3Bn0k {\n  from {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: left bottom;\n    transform-origin: left bottom;\n    -webkit-transform: rotate3d(0, 0, 1, -45deg);\n    transform: rotate3d(0, 0, 1, -45deg);\n    opacity: 0;\n  }\n}\n\n.animate_rotateOutUpLeft__3Bn0k {\n  -webkit-animation-name: animate_rotateOutUpLeft__3Bn0k;\n  animation-name: animate_rotateOutUpLeft__3Bn0k;\n}\n\n@-webkit-keyframes animate_rotateOutUpRight__12d5z {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 90deg);\n    transform: rotate3d(0, 0, 1, 90deg);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_rotateOutUpRight__12d5z {\n  from {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform-origin: right bottom;\n    transform-origin: right bottom;\n    -webkit-transform: rotate3d(0, 0, 1, 90deg);\n    transform: rotate3d(0, 0, 1, 90deg);\n    opacity: 0;\n  }\n}\n\n.animate_rotateOutUpRight__12d5z {\n  -webkit-animation-name: animate_rotateOutUpRight__12d5z;\n  animation-name: animate_rotateOutUpRight__12d5z;\n}\n\n@-webkit-keyframes animate_hinge__1gC1I {\n  0% {\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n  }\n\n  20%,\n  60% {\n    -webkit-transform: rotate3d(0, 0, 1, 80deg);\n    transform: rotate3d(0, 0, 1, 80deg);\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n  }\n\n  40%,\n  80% {\n    -webkit-transform: rotate3d(0, 0, 1, 60deg);\n    transform: rotate3d(0, 0, 1, 60deg);\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 700px, 0);\n    transform: translate3d(0, 700px, 0);\n    opacity: 0;\n  }\n}\n\n@keyframes animate_hinge__1gC1I {\n  0% {\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n  }\n\n  20%,\n  60% {\n    -webkit-transform: rotate3d(0, 0, 1, 80deg);\n    transform: rotate3d(0, 0, 1, 80deg);\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n  }\n\n  40%,\n  80% {\n    -webkit-transform: rotate3d(0, 0, 1, 60deg);\n    transform: rotate3d(0, 0, 1, 60deg);\n    -webkit-transform-origin: top left;\n    transform-origin: top left;\n    -webkit-animation-timing-function: ease-in-out;\n    animation-timing-function: ease-in-out;\n    opacity: 1;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 700px, 0);\n    transform: translate3d(0, 700px, 0);\n    opacity: 0;\n  }\n}\n\n.animate_hinge__1gC1I {\n  -webkit-animation-duration: 2s;\n  animation-duration: 2s;\n  -webkit-animation-name: animate_hinge__1gC1I;\n  animation-name: animate_hinge__1gC1I;\n}\n\n@-webkit-keyframes animate_jackInTheBox__11_ju {\n  from {\n    opacity: 0;\n    -webkit-transform: scale(0.1) rotate(30deg);\n    transform: scale(0.1) rotate(30deg);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n  }\n\n  50% {\n    -webkit-transform: rotate(-10deg);\n    transform: rotate(-10deg);\n  }\n\n  70% {\n    -webkit-transform: rotate(3deg);\n    transform: rotate(3deg);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n}\n\n@keyframes animate_jackInTheBox__11_ju {\n  from {\n    opacity: 0;\n    -webkit-transform: scale(0.1) rotate(30deg);\n    transform: scale(0.1) rotate(30deg);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n  }\n\n  50% {\n    -webkit-transform: rotate(-10deg);\n    transform: rotate(-10deg);\n  }\n\n  70% {\n    -webkit-transform: rotate(3deg);\n    transform: rotate(3deg);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: scale(1);\n    transform: scale(1);\n  }\n}\n\n.animate_jackInTheBox__11_ju {\n  -webkit-animation-name: animate_jackInTheBox__11_ju;\n  animation-name: animate_jackInTheBox__11_ju;\n}\n\n/* originally authored by Nick Pettit - https://github.com/nickpettit/glide */\n\n@-webkit-keyframes animate_rollIn__qdqqO {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg);\n    transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_rollIn__qdqqO {\n  from {\n    opacity: 0;\n    -webkit-transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg);\n    transform: translate3d(-100%, 0, 0) rotate3d(0, 0, 1, -120deg);\n  }\n\n  to {\n    opacity: 1;\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_rollIn__qdqqO {\n  -webkit-animation-name: animate_rollIn__qdqqO;\n  animation-name: animate_rollIn__qdqqO;\n}\n\n/* originally authored by Nick Pettit - https://github.com/nickpettit/glide */\n\n@-webkit-keyframes animate_rollOut__2jQO8 {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0) rotate3d(0, 0, 1, 120deg);\n    transform: translate3d(100%, 0, 0) rotate3d(0, 0, 1, 120deg);\n  }\n}\n\n@keyframes animate_rollOut__2jQO8 {\n  from {\n    opacity: 1;\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: translate3d(100%, 0, 0) rotate3d(0, 0, 1, 120deg);\n    transform: translate3d(100%, 0, 0) rotate3d(0, 0, 1, 120deg);\n  }\n}\n\n.animate_rollOut__2jQO8 {\n  -webkit-animation-name: animate_rollOut__2jQO8;\n  animation-name: animate_rollOut__2jQO8;\n}\n\n@-webkit-keyframes animate_zoomIn__3rhkD {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  50% {\n    opacity: 1;\n  }\n}\n\n@keyframes animate_zoomIn__3rhkD {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  50% {\n    opacity: 1;\n  }\n}\n\n.animate_zoomIn__3rhkD {\n  -webkit-animation-name: animate_zoomIn__3rhkD;\n  animation-name: animate_zoomIn__3rhkD;\n}\n\n@-webkit-keyframes animate_zoomInDown__JG8EB {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -1000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -1000px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomInDown__JG8EB {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -1000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -1000px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomInDown__JG8EB {\n  -webkit-animation-name: animate_zoomInDown__JG8EB;\n  animation-name: animate_zoomInDown__JG8EB;\n}\n\n@-webkit-keyframes animate_zoomInLeft__qAe_q {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(-1000px, 0, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(-1000px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(10px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(10px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomInLeft__qAe_q {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(-1000px, 0, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(-1000px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(10px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(10px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomInLeft__qAe_q {\n  -webkit-animation-name: animate_zoomInLeft__qAe_q;\n  animation-name: animate_zoomInLeft__qAe_q;\n}\n\n@-webkit-keyframes animate_zoomInRight__3tQ-_ {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(1000px, 0, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(1000px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(-10px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(-10px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomInRight__3tQ-_ {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(1000px, 0, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(1000px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(-10px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(-10px, 0, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomInRight__3tQ-_ {\n  -webkit-animation-name: animate_zoomInRight__3tQ-_;\n  animation-name: animate_zoomInRight__3tQ-_;\n}\n\n@-webkit-keyframes animate_zoomInUp__1ctD0 {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 1000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 1000px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomInUp__1ctD0 {\n  from {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 1000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 1000px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  60% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomInUp__1ctD0 {\n  -webkit-animation-name: animate_zoomInUp__1ctD0;\n  animation-name: animate_zoomInUp__1ctD0;\n}\n\n@-webkit-keyframes animate_zoomOut__1qWDJ {\n  from {\n    opacity: 1;\n  }\n\n  50% {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  to {\n    opacity: 0;\n  }\n}\n\n@keyframes animate_zoomOut__1qWDJ {\n  from {\n    opacity: 1;\n  }\n\n  50% {\n    opacity: 0;\n    -webkit-transform: scale3d(0.3, 0.3, 0.3);\n    transform: scale3d(0.3, 0.3, 0.3);\n  }\n\n  to {\n    opacity: 0;\n  }\n}\n\n.animate_zoomOut__1qWDJ {\n  -webkit-animation-name: animate_zoomOut__1qWDJ;\n  animation-name: animate_zoomOut__1qWDJ;\n}\n\n@-webkit-keyframes animate_zoomOutDown__35vfM {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 2000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 2000px, 0);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomOutDown__35vfM {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, -60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 2000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, 2000px, 0);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomOutDown__35vfM {\n  -webkit-animation-name: animate_zoomOutDown__35vfM;\n  animation-name: animate_zoomOutDown__35vfM;\n}\n\n@-webkit-keyframes animate_zoomOutLeft__2eFQd {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(42px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(42px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale(0.1) translate3d(-2000px, 0, 0);\n    transform: scale(0.1) translate3d(-2000px, 0, 0);\n    -webkit-transform-origin: left center;\n    transform-origin: left center;\n  }\n}\n\n@keyframes animate_zoomOutLeft__2eFQd {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(42px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(42px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale(0.1) translate3d(-2000px, 0, 0);\n    transform: scale(0.1) translate3d(-2000px, 0, 0);\n    -webkit-transform-origin: left center;\n    transform-origin: left center;\n  }\n}\n\n.animate_zoomOutLeft__2eFQd {\n  -webkit-animation-name: animate_zoomOutLeft__2eFQd;\n  animation-name: animate_zoomOutLeft__2eFQd;\n}\n\n@-webkit-keyframes animate_zoomOutRight__1qxrO {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(-42px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(-42px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale(0.1) translate3d(2000px, 0, 0);\n    transform: scale(0.1) translate3d(2000px, 0, 0);\n    -webkit-transform-origin: right center;\n    transform-origin: right center;\n  }\n}\n\n@keyframes animate_zoomOutRight__1qxrO {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(-42px, 0, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(-42px, 0, 0);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale(0.1) translate3d(2000px, 0, 0);\n    transform: scale(0.1) translate3d(2000px, 0, 0);\n    -webkit-transform-origin: right center;\n    transform-origin: right center;\n  }\n}\n\n.animate_zoomOutRight__1qxrO {\n  -webkit-animation-name: animate_zoomOutRight__1qxrO;\n  animation-name: animate_zoomOutRight__1qxrO;\n}\n\n@-webkit-keyframes animate_zoomOutUp__kSWPE {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -2000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -2000px, 0);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n@keyframes animate_zoomOutUp__kSWPE {\n  40% {\n    opacity: 1;\n    -webkit-transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    transform: scale3d(0.475, 0.475, 0.475) translate3d(0, 60px, 0);\n    -webkit-animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n    animation-timing-function: cubic-bezier(0.55, 0.055, 0.675, 0.19);\n  }\n\n  to {\n    opacity: 0;\n    -webkit-transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -2000px, 0);\n    transform: scale3d(0.1, 0.1, 0.1) translate3d(0, -2000px, 0);\n    -webkit-transform-origin: center bottom;\n    transform-origin: center bottom;\n    -webkit-animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n    animation-timing-function: cubic-bezier(0.175, 0.885, 0.32, 1);\n  }\n}\n\n.animate_zoomOutUp__kSWPE {\n  -webkit-animation-name: animate_zoomOutUp__kSWPE;\n  animation-name: animate_zoomOutUp__kSWPE;\n}\n\n@-webkit-keyframes animate_slideInDown__35wHN {\n  from {\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_slideInDown__35wHN {\n  from {\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_slideInDown__35wHN {\n  -webkit-animation-name: animate_slideInDown__35wHN;\n  animation-name: animate_slideInDown__35wHN;\n}\n\n@-webkit-keyframes animate_slideInLeft__1ImeA {\n  from {\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_slideInLeft__1ImeA {\n  from {\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_slideInLeft__1ImeA {\n  -webkit-animation-name: animate_slideInLeft__1ImeA;\n  animation-name: animate_slideInLeft__1ImeA;\n}\n\n@-webkit-keyframes animate_slideInRight__3K8gk {\n  from {\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_slideInRight__3K8gk {\n  from {\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_slideInRight__3K8gk {\n  -webkit-animation-name: animate_slideInRight__3K8gk;\n  animation-name: animate_slideInRight__3K8gk;\n}\n\n@-webkit-keyframes animate_slideInUp__zy0K5 {\n  from {\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n@keyframes animate_slideInUp__zy0K5 {\n  from {\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n    visibility: visible;\n  }\n\n  to {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n}\n\n.animate_slideInUp__zy0K5 {\n  -webkit-animation-name: animate_slideInUp__zy0K5;\n  animation-name: animate_slideInUp__zy0K5;\n}\n\n@-webkit-keyframes animate_slideOutDown__19w6V {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n}\n\n@keyframes animate_slideOutDown__19w6V {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(0, 100%, 0);\n    transform: translate3d(0, 100%, 0);\n  }\n}\n\n.animate_slideOutDown__19w6V {\n  -webkit-animation-name: animate_slideOutDown__19w6V;\n  animation-name: animate_slideOutDown__19w6V;\n}\n\n@-webkit-keyframes animate_slideOutLeft__LIyk1 {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n}\n\n@keyframes animate_slideOutLeft__LIyk1 {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(-100%, 0, 0);\n    transform: translate3d(-100%, 0, 0);\n  }\n}\n\n.animate_slideOutLeft__LIyk1 {\n  -webkit-animation-name: animate_slideOutLeft__LIyk1;\n  animation-name: animate_slideOutLeft__LIyk1;\n}\n\n@-webkit-keyframes animate_slideOutRight__2xauG {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n}\n\n@keyframes animate_slideOutRight__2xauG {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(100%, 0, 0);\n    transform: translate3d(100%, 0, 0);\n  }\n}\n\n.animate_slideOutRight__2xauG {\n  -webkit-animation-name: animate_slideOutRight__2xauG;\n  animation-name: animate_slideOutRight__2xauG;\n}\n\n@-webkit-keyframes animate_slideOutUp__12ncd {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n}\n\n@keyframes animate_slideOutUp__12ncd {\n  from {\n    -webkit-transform: translate3d(0, 0, 0);\n    transform: translate3d(0, 0, 0);\n  }\n\n  to {\n    visibility: hidden;\n    -webkit-transform: translate3d(0, -100%, 0);\n    transform: translate3d(0, -100%, 0);\n  }\n}\n\n.animate_slideOutUp__12ncd {\n  -webkit-animation-name: animate_slideOutUp__12ncd;\n  animation-name: animate_slideOutUp__12ncd;\n}\n\n.animate_animated__2O131 {\n  -webkit-animation-duration: 1s;\n  animation-duration: 1s;\n  -webkit-animation-fill-mode: both;\n  animation-fill-mode: both;\n}\n\n.animate_animated__2O131.animate_infinite__3ditF {\n  -webkit-animation-iteration-count: infinite;\n  animation-iteration-count: infinite;\n}\n\n.animate_animated__2O131.animate_delay-1s__tZien {\n  -webkit-animation-delay: 1s;\n  animation-delay: 1s;\n}\n\n.animate_animated__2O131.animate_delay-2s__1dACJ {\n  -webkit-animation-delay: 2s;\n  animation-delay: 2s;\n}\n\n.animate_animated__2O131.animate_delay-3s__C8YvR {\n  -webkit-animation-delay: 3s;\n  animation-delay: 3s;\n}\n\n.animate_animated__2O131.animate_delay-4s__2ZVXp {\n  -webkit-animation-delay: 4s;\n  animation-delay: 4s;\n}\n\n.animate_animated__2O131.animate_delay-5s__24IyR {\n  -webkit-animation-delay: 5s;\n  animation-delay: 5s;\n}\n\n.animate_animated__2O131.animate_fast__S3Qk1 {\n  -webkit-animation-duration: 800ms;\n  animation-duration: 800ms;\n}\n\n.animate_animated__2O131.animate_faster__2Od10 {\n  -webkit-animation-duration: 500ms;\n  animation-duration: 500ms;\n}\n\n.animate_animated__2O131.animate_slow__3NTbA {\n  -webkit-animation-duration: 2s;\n  animation-duration: 2s;\n}\n\n.animate_animated__2O131.animate_slower__2SvbH {\n  -webkit-animation-duration: 3s;\n  animation-duration: 3s;\n}\n\n@media (print), (prefers-reduced-motion: reduce) {\n  .animate_animated__2O131 {\n    -webkit-animation-duration: 1ms !important;\n    animation-duration: 1ms !important;\n    -webkit-transition-duration: 1ms !important;\n    transition-duration: 1ms !important;\n    -webkit-animation-iteration-count: 1 !important;\n    animation-iteration-count: 1 !important;\n  }\n}\n";
+var animateCSS = {
+  "bounce": "animate_bounce__2lrL7",
+  "flash": "animate_flash__1cEFo",
+  "pulse": "animate_pulse__2PvmM",
+  "rubberBand": "animate_rubberBand__2EGEd",
+  "shake": "animate_shake__2DAZ4",
+  "headShake": "animate_headShake__3XmHP",
+  "swing": "animate_swing__3C_jC",
+  "tada": "animate_tada__Qt5PH",
+  "wobble": "animate_wobble__SKKSi",
+  "jello": "animate_jello__1vLIG",
+  "heartBeat": "animate_heartBeat__1jDTN",
+  "bounceIn": "animate_bounceIn__A5DKu",
+  "bounceInDown": "animate_bounceInDown__ZnhIW",
+  "bounceInLeft": "animate_bounceInLeft__3RKRN",
+  "bounceInRight": "animate_bounceInRight__1fPzt",
+  "bounceInUp": "animate_bounceInUp__3be9U",
+  "bounceOut": "animate_bounceOut__1cFbR",
+  "bounceOutDown": "animate_bounceOutDown__2bUPG",
+  "bounceOutLeft": "animate_bounceOutLeft__2Q63A",
+  "bounceOutRight": "animate_bounceOutRight__360fD",
+  "bounceOutUp": "animate_bounceOutUp__3XAFf",
+  "fadeIn": "animate_fadeIn__3bQIe",
+  "fadeInDown": "animate_fadeInDown__dGqol",
+  "fadeInDownBig": "animate_fadeInDownBig__1FQOh",
+  "fadeInLeft": "animate_fadeInLeft__2Rcw5",
+  "fadeInLeftBig": "animate_fadeInLeftBig__2VDk0",
+  "fadeInRight": "animate_fadeInRight__uwTeO",
+  "fadeInRightBig": "animate_fadeInRightBig__3Xcl7",
+  "fadeInUp": "animate_fadeInUp__2xZln",
+  "fadeInUpBig": "animate_fadeInUpBig__zqLD5",
+  "fadeOut": "animate_fadeOut__1eBhz",
+  "fadeOutDown": "animate_fadeOutDown__2VkMZ",
+  "fadeOutDownBig": "animate_fadeOutDownBig__3TYAD",
+  "fadeOutLeft": "animate_fadeOutLeft__2jmiI",
+  "fadeOutLeftBig": "animate_fadeOutLeftBig__1FJrH",
+  "fadeOutRight": "animate_fadeOutRight__hdB_e",
+  "fadeOutRightBig": "animate_fadeOutRightBig__2DPtr",
+  "fadeOutUp": "animate_fadeOutUp__3e5Sp",
+  "fadeOutUpBig": "animate_fadeOutUpBig__1jhuD",
+  "animated": "animate_animated__2O131",
+  "flip": "animate_flip__mEy1R",
+  "flipInX": "animate_flipInX__3AYWx",
+  "flipInY": "animate_flipInY__kBUzo",
+  "flipOutX": "animate_flipOutX__14JIh",
+  "flipOutY": "animate_flipOutY__3-fcT",
+  "lightSpeedIn": "animate_lightSpeedIn__23y_G",
+  "lightSpeedOut": "animate_lightSpeedOut__c7ISu",
+  "rotateIn": "animate_rotateIn__1rIe1",
+  "rotateInDownLeft": "animate_rotateInDownLeft__1Yg3C",
+  "rotateInDownRight": "animate_rotateInDownRight__23mEq",
+  "rotateInUpLeft": "animate_rotateInUpLeft__7696c",
+  "rotateInUpRight": "animate_rotateInUpRight__yaDuX",
+  "rotateOut": "animate_rotateOut__3wKvg",
+  "rotateOutDownLeft": "animate_rotateOutDownLeft__3ULiD",
+  "rotateOutDownRight": "animate_rotateOutDownRight__2Ecbu",
+  "rotateOutUpLeft": "animate_rotateOutUpLeft__3Bn0k",
+  "rotateOutUpRight": "animate_rotateOutUpRight__12d5z",
+  "hinge": "animate_hinge__1gC1I",
+  "jackInTheBox": "animate_jackInTheBox__11_ju",
+  "rollIn": "animate_rollIn__qdqqO",
+  "rollOut": "animate_rollOut__2jQO8",
+  "zoomIn": "animate_zoomIn__3rhkD",
+  "zoomInDown": "animate_zoomInDown__JG8EB",
+  "zoomInLeft": "animate_zoomInLeft__qAe_q",
+  "zoomInRight": "animate_zoomInRight__3tQ-_",
+  "zoomInUp": "animate_zoomInUp__1ctD0",
+  "zoomOut": "animate_zoomOut__1qWDJ",
+  "zoomOutDown": "animate_zoomOutDown__35vfM",
+  "zoomOutLeft": "animate_zoomOutLeft__2eFQd",
+  "zoomOutRight": "animate_zoomOutRight__1qxrO",
+  "zoomOutUp": "animate_zoomOutUp__kSWPE",
+  "slideInDown": "animate_slideInDown__35wHN",
+  "slideInLeft": "animate_slideInLeft__1ImeA",
+  "slideInRight": "animate_slideInRight__3K8gk",
+  "slideInUp": "animate_slideInUp__zy0K5",
+  "slideOutDown": "animate_slideOutDown__19w6V",
+  "slideOutLeft": "animate_slideOutLeft__LIyk1",
+  "slideOutRight": "animate_slideOutRight__2xauG",
+  "slideOutUp": "animate_slideOutUp__12ncd",
+  "infinite": "animate_infinite__3ditF",
+  "delay-1s": "animate_delay-1s__tZien",
+  "delay-2s": "animate_delay-2s__1dACJ",
+  "delay-3s": "animate_delay-3s__C8YvR",
+  "delay-4s": "animate_delay-4s__2ZVXp",
+  "delay-5s": "animate_delay-5s__24IyR",
+  "fast": "animate_fast__S3Qk1",
+  "faster": "animate_faster__2Od10",
+  "slow": "animate_slow__3NTbA",
+  "slower": "animate_slower__2SvbH"
+};
+styleInject(css);
 
-module.hot.dispose(reloadCSS);
-module.hot.accept(reloadCSS);
-},{"_css_loader":"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/css-loader.js"}],"components/login-view/login-view.jsx":[function(require,module,exports) {
+var timeShape = _propTypes.default.oneOfType([_propTypes.default.number, _propTypes.default.shape({
+  in: _propTypes.default.number,
+  out: _propTypes.default.number
+}).isRequired]);
+
+var easingShape = _propTypes.default.oneOfType([_propTypes.default.string, _propTypes.default.shape({
+  in: _propTypes.default.string,
+  out: _propTypes.default.string
+}).isRequired]);
+
+var css$1 = "@keyframes index_fadeInDownSmall__11xG1 {\n  from {\n    opacity: 0;\n    transform: translate3d(0, -10px, 0); }\n  to {\n    opacity: 1;\n    transform: translate3d(0, 0, 0); } }\n\n.index_fadeInDownSmall__11xG1 {\n  animation-name: index_fadeInDownSmall__11xG1; }\n\n@keyframes index_fadeInLeftSmall__UyT9x {\n  from {\n    opacity: 0;\n    transform: translate3d(-10px, 0, 0); }\n  to {\n    opacity: 1;\n    transform: translate3d(0, 0, 0); } }\n\n.index_fadeInLeftSmall__UyT9x {\n  animation-name: index_fadeInLeftSmall__UyT9x; }\n\n@keyframes index_fadeInRightSmall__SJa0- {\n  from {\n    opacity: 0;\n    transform: translate3d(10px, 0, 0); }\n  to {\n    opacity: 1;\n    transform: translate3d(0, 0, 0); } }\n\n.index_fadeInRightSmall__SJa0- {\n  animation-name: index_fadeInRightSmall__SJa0-; }\n\n@keyframes index_fadeInUpSmall__3EL0B {\n  from {\n    opacity: 0;\n    transform: translate3d(0, 10px, 0); }\n  to {\n    opacity: 1;\n    transform: translate3d(0, 0, 0); } }\n\n.index_fadeInUpSmall__3EL0B {\n  animation-name: index_fadeInUpSmall__3EL0B; }\n\n@keyframes index_fadeOutDownSmall__2g2cA {\n  from {\n    opacity: 1; }\n  to {\n    opacity: 0;\n    transform: translate3d(0, 10px, 0); } }\n\n.index_fadeOutDownSmall__2g2cA {\n  animation-name: index_fadeOutDownSmall__2g2cA; }\n\n@keyframes index_fadeOutLeftSmall__1hn_X {\n  from {\n    opacity: 1; }\n  to {\n    opacity: 0;\n    transform: translate3d(-10px, 0, 0); } }\n\n.index_fadeOutLeftSmall__1hn_X {\n  animation-name: index_fadeOutLeftSmall__1hn_X; }\n\n@keyframes index_fadeOutRightSmall__3BgkP {\n  from {\n    opacity: 1; }\n  to {\n    opacity: 0;\n    transform: translate3d(10px, 0, 0); } }\n\n.index_fadeOutRightSmall__3BgkP {\n  animation-name: index_fadeOutRightSmall__3BgkP; }\n\n@keyframes index_fadeOutUpSmall__1S0Jc {\n  from {\n    opacity: 1; }\n  to {\n    opacity: 0;\n    transform: translate3d(0, -10px, 0); } }\n\n.index_fadeOutUpSmall__1S0Jc {\n  animation-name: index_fadeOutUpSmall__1S0Jc; }\n\n@keyframes index_rotateInDown__1rGN7 {\n  from {\n    transform: rotateX(90deg);\n    visibility: visible; }\n  to {\n    transform: rotateX(0deg); } }\n\n.index_rotateInDown__1rGN7 {\n  transform-origin: bottom;\n  animation-name: index_rotateInDown__1rGN7; }\n\n@keyframes index_rotateInLeft__2ylij {\n  from {\n    transform: rotateY(90deg);\n    visibility: visible; }\n  to {\n    transform: rotateY(0deg); } }\n\n.index_rotateInLeft__2ylij {\n  transform-origin: left;\n  animation-name: index_rotateInLeft__2ylij; }\n\n@keyframes index_rotateInRight__1sqCx {\n  from {\n    transform: rotateY(90deg);\n    visibility: visible; }\n  to {\n    transform: rotateY(0deg); } }\n\n.index_rotateInRight__1sqCx {\n  transform-origin: right;\n  animation-name: index_rotateInRight__1sqCx; }\n\n@keyframes index_rotateInUp__1az1B {\n  from {\n    transform: rotateX(90deg);\n    visibility: visible; }\n  to {\n    transform: rotateX(0deg); } }\n\n.index_rotateInUp__1az1B {\n  transform-origin: top;\n  animation-name: index_rotateInUp__1az1B; }\n\n@keyframes index_rotateOutDown__3yASK {\n  from {\n    transform: rotateX(0deg); }\n  to {\n    transform: rotateX(90deg);\n    visibility: hidden; } }\n\n.index_rotateOutDown__3yASK {\n  transform-origin: bottom;\n  animation-name: index_rotateOutDown__3yASK; }\n\n@keyframes index_rotateOutLeft__2JX_c {\n  from {\n    transform: rotateY(0deg); }\n  to {\n    transform: rotateY(90deg);\n    visibility: hidden; } }\n\n.index_rotateOutLeft__2JX_c {\n  transform-origin: left;\n  animation-name: index_rotateOutLeft__2JX_c; }\n\n@keyframes index_rotateOutRight__2EJYY {\n  from {\n    transform: rotateY(0deg); }\n  to {\n    transform: rotateY(90deg);\n    visibility: hidden; } }\n\n.index_rotateOutRight__2EJYY {\n  transform-origin: right;\n  animation-name: index_rotateOutRight__2EJYY; }\n\n@keyframes index_rotateOutUp__2X1t2 {\n  from {\n    transform: rotateX(0deg); }\n  to {\n    transform: rotateX(90deg);\n    visibility: hidden; } }\n\n.index_rotateOutUp__2X1t2 {\n  transform-origin: top;\n  animation-name: index_rotateOutUp__2X1t2; }\n\n@keyframes index_scaleIn__1Z0iX {\n  from {\n    transform: scale(0);\n    visibility: visible; }\n  to {\n    transform: scale(1); } }\n\n.index_scaleIn__1Z0iX {\n  animation-name: index_scaleIn__1Z0iX; }\n\n@keyframes index_scaleInDown__2XvsF {\n  from {\n    transform: scaleY(0);\n    visibility: visible; }\n  to {\n    transform: scaleY(1); } }\n\n.index_scaleInDown__2XvsF {\n  transform-origin: bottom;\n  animation-name: index_scaleInDown__2XvsF; }\n\n@keyframes index_scaleInLeft__2uTST {\n  from {\n    transform: scaleX(0);\n    visibility: visible; }\n  to {\n    transform: scaleX(1); } }\n\n.index_scaleInLeft__2uTST {\n  transform-origin: left;\n  animation-name: index_scaleInLeft__2uTST; }\n\n@keyframes index_scaleInRight__578_v {\n  from {\n    transform: scaleX(0);\n    visibility: visible; }\n  to {\n    transform: scaleX(1); } }\n\n.index_scaleInRight__578_v {\n  transform-origin: right;\n  animation-name: index_scaleInRight__578_v; }\n\n@keyframes index_scaleInUp__1vJHN {\n  from {\n    transform: scaleY(0);\n    visibility: visible; }\n  to {\n    transform: scaleY(1); } }\n\n.index_scaleInUp__1vJHN {\n  transform-origin: top;\n  animation-name: index_scaleInUp__1vJHN; }\n\n@keyframes index_scaleOut__nAPp8 {\n  from {\n    transform: scale(1); }\n  to {\n    visibility: hidden;\n    transform: scale(0); } }\n\n.index_scaleOut__nAPp8 {\n  animation-name: index_scaleOut__nAPp8; }\n\n@keyframes index_scaleOutDown__2UlJ2 {\n  from {\n    transform: scaleY(1); }\n  to {\n    visibility: hidden;\n    transform: scaleY(0); } }\n\n.index_scaleOutDown__2UlJ2 {\n  transform-origin: bottom;\n  animation-name: index_scaleOutDown__2UlJ2; }\n\n@keyframes index_scaleOutLeft__1-fsg {\n  from {\n    transform: scaleX(1); }\n  to {\n    visibility: hidden;\n    transform: scaleX(0); } }\n\n.index_scaleOutLeft__1-fsg {\n  transform-origin: left;\n  animation-name: index_scaleOutLeft__1-fsg; }\n\n@keyframes index_scaleOutRight__2m97E {\n  from {\n    transform: scaleX(1); }\n  to {\n    visibility: hidden;\n    transform: scaleX(0); } }\n\n.index_scaleOutRight__2m97E {\n  transform-origin: right;\n  animation-name: index_scaleOutRight__2m97E; }\n\n@keyframes index_scaleOutUp__29wUO {\n  from {\n    transform: scaleY(1); }\n  to {\n    visibility: hidden;\n    transform: scaleY(0); } }\n\n.index_scaleOutUp__29wUO {\n  transform-origin: top;\n  animation-name: index_scaleOutUp__29wUO; }\n\n@keyframes index_heightIn__1JvRs {\n  from {\n    height: 0; }\n  to {\n    height: 100%; } }\n\n.index_heightIn__1JvRs {\n  animation-name: index_heightIn__1JvRs; }\n\n@keyframes index_heightOut__1wVM5 {\n  from {\n    height: 100%; }\n  to {\n    height: 0; } }\n\n.index_heightOut__1wVM5 {\n  animation-name: index_heightOut__1wVM5; }\n\n@keyframes index_widthIn__2rG7D {\n  from {\n    width: 0; }\n  to {\n    width: 100%; } }\n\n.index_widthIn__2rG7D {\n  animation-name: index_widthIn__2rG7D; }\n\n@keyframes index_widthOut__24vIr {\n  from {\n    width: 100%; }\n  to {\n    width: 0; } }\n\n.index_widthOut__24vIr {\n  animation-name: index_widthOut__24vIr; }\n";
+var animations = {
+  "fadeInDownSmall": "index_fadeInDownSmall__11xG1",
+  "fadeInLeftSmall": "index_fadeInLeftSmall__UyT9x",
+  "fadeInRightSmall": "index_fadeInRightSmall__SJa0-",
+  "fadeInUpSmall": "index_fadeInUpSmall__3EL0B",
+  "fadeOutDownSmall": "index_fadeOutDownSmall__2g2cA",
+  "fadeOutLeftSmall": "index_fadeOutLeftSmall__1hn_X",
+  "fadeOutRightSmall": "index_fadeOutRightSmall__3BgkP",
+  "fadeOutUpSmall": "index_fadeOutUpSmall__1S0Jc",
+  "rotateInDown": "index_rotateInDown__1rGN7",
+  "rotateInLeft": "index_rotateInLeft__2ylij",
+  "rotateInRight": "index_rotateInRight__1sqCx",
+  "rotateInUp": "index_rotateInUp__1az1B",
+  "rotateOutDown": "index_rotateOutDown__3yASK",
+  "rotateOutLeft": "index_rotateOutLeft__2JX_c",
+  "rotateOutRight": "index_rotateOutRight__2EJYY",
+  "rotateOutUp": "index_rotateOutUp__2X1t2",
+  "scaleIn": "index_scaleIn__1Z0iX",
+  "scaleInDown": "index_scaleInDown__2XvsF",
+  "scaleInLeft": "index_scaleInLeft__2uTST",
+  "scaleInRight": "index_scaleInRight__578_v",
+  "scaleInUp": "index_scaleInUp__1vJHN",
+  "scaleOut": "index_scaleOut__nAPp8",
+  "scaleOutDown": "index_scaleOutDown__2UlJ2",
+  "scaleOutLeft": "index_scaleOutLeft__1-fsg",
+  "scaleOutRight": "index_scaleOutRight__2m97E",
+  "scaleOutUp": "index_scaleOutUp__29wUO",
+  "heightIn": "index_heightIn__1JvRs",
+  "heightOut": "index_heightOut__1wVM5",
+  "widthIn": "index_widthIn__2rG7D",
+  "widthOut": "index_widthOut__24vIr"
+};
+styleInject(css$1);
+
+var classCallCheck = function (instance, Constructor) {
+  if (!(instance instanceof Constructor)) {
+    throw new TypeError("Cannot call a class as a function");
+  }
+};
+
+var createClass = function () {
+  function defineProperties(target, props) {
+    for (var i = 0; i < props.length; i++) {
+      var descriptor = props[i];
+      descriptor.enumerable = descriptor.enumerable || false;
+      descriptor.configurable = true;
+      if ("value" in descriptor) descriptor.writable = true;
+      Object.defineProperty(target, descriptor.key, descriptor);
+    }
+  }
+
+  return function (Constructor, protoProps, staticProps) {
+    if (protoProps) defineProperties(Constructor.prototype, protoProps);
+    if (staticProps) defineProperties(Constructor, staticProps);
+    return Constructor;
+  };
+}();
+
+var _extends = Object.assign || function (target) {
+  for (var i = 1; i < arguments.length; i++) {
+    var source = arguments[i];
+
+    for (var key in source) {
+      if (Object.prototype.hasOwnProperty.call(source, key)) {
+        target[key] = source[key];
+      }
+    }
+  }
+
+  return target;
+};
+
+var inherits = function (subClass, superClass) {
+  if (typeof superClass !== "function" && superClass !== null) {
+    throw new TypeError("Super expression must either be null or a function, not " + typeof superClass);
+  }
+
+  subClass.prototype = Object.create(superClass && superClass.prototype, {
+    constructor: {
+      value: subClass,
+      enumerable: false,
+      writable: true,
+      configurable: true
+    }
+  });
+  if (superClass) Object.setPrototypeOf ? Object.setPrototypeOf(subClass, superClass) : subClass.__proto__ = superClass;
+};
+
+var possibleConstructorReturn = function (self, call) {
+  if (!self) {
+    throw new ReferenceError("this hasn't been initialised - super() hasn't been called");
+  }
+
+  return call && (typeof call === "object" || typeof call === "function") ? call : self;
+};
+
+var getAnimatedState = function getAnimatedState(props) {
+  var isVisible = props.isVisible,
+      animationIn = props.animationIn,
+      animationOut = props.animationOut,
+      duration = props.duration,
+      easing = props.easing,
+      delay = props.delay;
+  var type = isVisible ? 'in' : 'out';
+  return {
+    isVisible: isVisible,
+    animation: isVisible ? animationIn : animationOut,
+    delay: delay[type] === 0 || delay[type] ? delay[type] : delay,
+    easing: easing[type] ? easing[type] : easing,
+    duration: duration[type] === 0 || duration[type] ? duration[type] : duration
+  };
+};
+
+var Animated = function (_PureComponent) {
+  inherits(Animated, _PureComponent);
+
+  function Animated(props) {
+    classCallCheck(this, Animated);
+
+    var _this = possibleConstructorReturn(this, (Animated.__proto__ || Object.getPrototypeOf(Animated)).call(this, props));
+
+    _this.handleClick = function () {
+      var _this$props = _this.props,
+          data = _this$props.data,
+          onClick = _this$props.onClick;
+      if (onClick) onClick(data);
+    };
+
+    _this.styles = _extends({}, animateCSS, animations, props.animations);
+    _this.state = props.animateOnMount ? getAnimatedState(props) : {
+      isVisible: props.isVisible
+    };
+    return _this;
+  }
+
+  createClass(Animated, [{
+    key: 'render',
+    value: function render() {
+      var _props = this.props,
+          tag = _props.tag,
+          style = _props.style,
+          className = _props.className,
+          children = _props.children,
+          innerRef = _props.innerRef,
+          renderContent = _props.renderContent;
+      var _state = this.state,
+          delay = _state.delay,
+          easing = _state.easing,
+          duration = _state.duration,
+          animation = _state.animation,
+          isVisible = _state.isVisible;
+      var Tag = tag;
+      style.opacity = animation ? null : Number(isVisible);
+      return _react.default.createElement(Tag, {
+        className: classnames(className, this.styles.animated, this.styles[animation]),
+        ref: innerRef,
+        style: _extends({
+          animationDelay: delay + 'ms',
+          animationTimingFunction: easing,
+          animationDuration: duration + 'ms',
+          pointerEvents: isVisible ? 'all' : 'none'
+        }, style),
+        onClick: this.handleClick
+      }, renderContent ? renderContent() : children);
+    }
+  }], [{
+    key: 'getDerivedStateFromProps',
+    value: function getDerivedStateFromProps(nextProps, prevState) {
+      var isVisible = nextProps.isVisible;
+      if (prevState.isVisible === undefined) return null;
+
+      if (isVisible !== prevState.isVisible) {
+        return getAnimatedState(nextProps);
+      }
+
+      return null;
+    }
+  }]);
+  return Animated;
+}(_react.PureComponent);
+
+Animated.propTypes = {
+  className: _propTypes.default.string,
+  innerRef: _propTypes.default.oneOfType([_propTypes.default.func, _propTypes.default.object]),
+  tag: _propTypes.default.string,
+  style: _propTypes.default.object,
+  isVisible: _propTypes.default.bool,
+  animations: _propTypes.default.object,
+
+  /* eslint-disable react/no-unused-prop-types */
+
+  /* These props are used in an external function getAnimatedState */
+  animationIn: _propTypes.default.string,
+  animationOut: _propTypes.default.string,
+  delay: timeShape,
+  duration: timeShape,
+  easing: easingShape,
+
+  /* eslint-enable */
+  animateOnMount: _propTypes.default.bool,
+  children: _propTypes.default.node,
+
+  /*
+    renderContent description:
+    Elements always come new, so there is a reason to rerender.
+    To avoid rerender use the function renderContent instead children.
+  */
+  renderContent: _propTypes.default.func,
+  data: _propTypes.default.any,
+  onClick: _propTypes.default.func
+};
+Animated.defaultProps = {
+  tag: 'div',
+  style: {},
+  animations: {},
+  isVisible: true,
+  animationIn: 'fadeIn',
+  animationOut: 'fadeOut',
+  delay: 0,
+  duration: 300,
+  easing: 'ease',
+  animateOnMount: false
+};
+var _default = Animated;
+exports.default = _default;
+},{"react":"../node_modules/react/index.js","prop-types":"../node_modules/prop-types/index.js"}],"components/login-view/login-view.jsx":[function(require,module,exports) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -36026,17 +37596,19 @@ exports.LoginView = LoginView;
 
 var _react = _interopRequireWildcard(require("react"));
 
-var _propTypes = _interopRequireDefault(require("prop-types"));
-
 var _Form = _interopRequireDefault(require("react-bootstrap/Form"));
 
 var _Button = _interopRequireDefault(require("react-bootstrap/Button"));
+
+var _Alert = _interopRequireDefault(require("react-bootstrap/Alert"));
 
 var _Col = _interopRequireDefault(require("react-bootstrap/Col"));
 
 var _Row = _interopRequireDefault(require("react-bootstrap/Row"));
 
-require("./login-view.scss");
+var _reactCssAnimated = _interopRequireDefault(require("react-css-animated"));
+
+var _axios = _interopRequireDefault(require("axios"));
 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
@@ -36053,12 +37625,12 @@ function _iterableToArrayLimit(arr, i) { if (!(Symbol.iterator in Object(arr) ||
 function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
 function LoginView(props) {
-  var _useState = (0, _react.useState)(''),
+  var _useState = (0, _react.useState)(""),
       _useState2 = _slicedToArray(_useState, 2),
       username = _useState2[0],
       setUsername = _useState2[1];
 
-  var _useState3 = (0, _react.useState)(''),
+  var _useState3 = (0, _react.useState)(""),
       _useState4 = _slicedToArray(_useState3, 2),
       password = _useState4[0],
       setPassword = _useState4[1];
@@ -36066,103 +37638,103 @@ function LoginView(props) {
   var _useState5 = (0, _react.useState)(false),
       _useState6 = _slicedToArray(_useState5, 2),
       validated = _useState6[0],
-      setValidated = _useState6[1]; // updating handle submit //https://soflix.herokuapp.com
+      setValidated = _useState6[1];
 
+  var _useState7 = (0, _react.useState)(false),
+      _useState8 = _slicedToArray(_useState7, 2),
+      loginFail = _useState8[0],
+      setloginFail = _useState8[1];
 
-  var handleSubmit = function handleSubmit(e) {
-    e.preventDefault();
+  var mounted = true;
+
+  var handleSubmit = function handleSubmit(event) {
     var form = event.currentTarget;
 
     if (form.checkValidity() === false) {
+      event.preventDefault();
       event.stopPropagation();
-    } else {
-      console.log('new login', username, 'with password', password);
-      /* Send a request to the server for authentication */
-
-      /* then call props.onLoggedIn(username) */
-
-      props.onLoggedIn(username);
     }
 
     setValidated(true);
-  }; // https://react-bootstrap.github.io/components/forms/
-  // React-bootstrap components form
-  // React-bootstrap container // https://stackoverflow.com/questions/44872273/how-to-replace-container-class-in-react-bootstrap
 
+    if (form.checkValidity() === true) {
+      if (mounted) {
+        event.preventDefault();
 
-  return _react.default.createElement("div", {
-    className: "login-view"
-  }, _react.default.createElement(_Row.default, {
-    className: "justify-content-center"
+        _axios.default.post("https://movie-api0.herokuapp.com/", {
+          Username: username,
+          Password: password
+        }).then(function (response) {
+          var data = response.data;
+          props.onLoggedIn(data);
+        }).catch(function (e) {
+          setValidated(false);
+          setloginFail(true);
+        });
+      }
+    }
+  };
+
+  (0, _react.useEffect)(function () {
+    return function () {
+      mounted = false;
+    };
+  }, [mounted]);
+  return _react.default.createElement(_reactCssAnimated.default, {
+    className: "h-100",
+    animateOnMount: true,
+    animationIn: "fadeInLeft",
+    duration: {
+      in: 600
+    },
+    animationOut: "fadeOutRight",
+    isVisible: props.animate
   }, _react.default.createElement(_Col.default, {
-    xs: 11,
-    sm: 8,
-    md: 6,
-    className: "form-container"
-  }, _react.default.createElement(_Form.default, {
+    className: "mt-5"
+  }, _react.default.createElement("h1", {
+    className: "text-center pt-3"
+  }, "Login"), _react.default.createElement(_Form.default, {
+    className: "col mx-auto ",
     noValidate: true,
     validated: validated,
     onSubmit: handleSubmit
   }, _react.default.createElement(_Form.default.Group, {
-    controlId: "formBasicUsername"
+    controlId: "validationCustom01"
   }, _react.default.createElement(_Form.default.Label, null, "Username"), _react.default.createElement(_Form.default.Control, {
+    required: true,
+    isInvalid: loginFail,
     type: "text",
+    placeholder: "",
     value: username,
     onChange: function onChange(e) {
       return setUsername(e.target.value);
-    },
-    required: true,
-    placeholder: "Enter username"
+    }
   }), _react.default.createElement(_Form.default.Control.Feedback, {
     type: "invalid"
-  }, "Choose a Username.")), _react.default.createElement(_Form.default.Group, {
-    controlId: "formBasicPassword"
+  }, loginFail ? "Username/Password not found!" : "Please Enter a valid Username")), _react.default.createElement(_Form.default.Group, {
+    controlId: "validationCustom02"
   }, _react.default.createElement(_Form.default.Label, null, "Password"), _react.default.createElement(_Form.default.Control, {
+    required: true,
+    isInvalid: loginFail,
     type: "password",
+    placeholder: "",
     value: password,
     onChange: function onChange(e) {
       return setPassword(e.target.value);
-    },
-    required: true,
-    placeholder: "Password"
+    }
   }), _react.default.createElement(_Form.default.Control.Feedback, {
     type: "invalid"
-  }, "Insert password.")), _react.default.createElement(_Button.default, {
-    variant: "primary",
-    type: "submit"
-  }, "Submit")))));
+  }, loginFail ? "Username/Password not found!" : "Please enter a valid Password"), _react.default.createElement(_Button.default, {
+    variant: "link",
+    onClick: function onClick() {
+      return props.linkTo("/register", 700, false);
+    }
+  }, "Dont have an account? Click here to register!")), _react.default.createElement(_Button.default, {
+    type: "submit",
+    className: "d-block mx-auto"
+  }, "Submit"))));
 }
-
-LoginView.propTypes = {
-  onLoggedIn: _propTypes.default.func.isRequired
-};
-},{"react":"../node_modules/react/index.js","prop-types":"../node_modules/prop-types/index.js","react-bootstrap/Form":"../node_modules/react-bootstrap/esm/Form.js","react-bootstrap/Button":"../node_modules/react-bootstrap/esm/Button.js","react-bootstrap/Col":"../node_modules/react-bootstrap/esm/Col.js","react-bootstrap/Row":"../node_modules/react-bootstrap/esm/Row.js","./login-view.scss":"components/login-view/login-view.scss"}],"../node_modules/react-bootstrap/esm/utils/divWithClassName.js":[function(require,module,exports) {
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.default = void 0;
-
-var _extends2 = _interopRequireDefault(require("@babel/runtime/helpers/esm/extends"));
-
-var _react = _interopRequireDefault(require("react"));
-
-var _classnames = _interopRequireDefault(require("classnames"));
-
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-
-var _default = function _default(className) {
-  return _react.default.forwardRef(function (p, ref) {
-    return _react.default.createElement("div", (0, _extends2.default)({}, p, {
-      ref: ref,
-      className: (0, _classnames.default)(p.className, className)
-    }));
-  });
-};
-
-exports.default = _default;
-},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","react":"../node_modules/react/index.js","classnames":"../node_modules/classnames/index.js"}],"../node_modules/react-bootstrap/esm/CardContext.js":[function(require,module,exports) {
+},{"react":"../node_modules/react/index.js","react-bootstrap/Form":"../node_modules/react-bootstrap/esm/Form.js","react-bootstrap/Button":"../node_modules/react-bootstrap/esm/Button.js","react-bootstrap/Alert":"../node_modules/react-bootstrap/esm/Alert.js","react-bootstrap/Col":"../node_modules/react-bootstrap/esm/Col.js","react-bootstrap/Row":"../node_modules/react-bootstrap/esm/Row.js","react-css-animated":"../node_modules/react-css-animated/dist/index.es.js","axios":"../node_modules/axios/index.js"}],"../node_modules/react-bootstrap/esm/CardContext.js":[function(require,module,exports) {
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -36425,7 +37997,74 @@ Media.displayName = 'Media';
 Media.Body = (0, _createWithBsPrefix.default)('media-body');
 var _default = Media;
 exports.default = _default;
-},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./utils/createWithBsPrefix":"../node_modules/react-bootstrap/esm/utils/createWithBsPrefix.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js"}],"components/movie-view/movie-view.scss":[function(require,module,exports) {
+},{"@babel/runtime/helpers/esm/extends":"../node_modules/@babel/runtime/helpers/esm/extends.js","@babel/runtime/helpers/esm/objectWithoutPropertiesLoose":"../node_modules/@babel/runtime/helpers/esm/objectWithoutPropertiesLoose.js","classnames":"../node_modules/classnames/index.js","react":"../node_modules/react/index.js","./utils/createWithBsPrefix":"../node_modules/react-bootstrap/esm/utils/createWithBsPrefix.js","./ThemeProvider":"../node_modules/react-bootstrap/esm/ThemeProvider.js"}],"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/bundle-url.js":[function(require,module,exports) {
+var bundleURL = null;
+
+function getBundleURLCached() {
+  if (!bundleURL) {
+    bundleURL = getBundleURL();
+  }
+
+  return bundleURL;
+}
+
+function getBundleURL() {
+  // Attempt to find the URL of the current script and use that as the base URL
+  try {
+    throw new Error();
+  } catch (err) {
+    var matches = ('' + err.stack).match(/(https?|file|ftp|chrome-extension|moz-extension):\/\/[^)\n]+/g);
+
+    if (matches) {
+      return getBaseURL(matches[0]);
+    }
+  }
+
+  return '/';
+}
+
+function getBaseURL(url) {
+  return ('' + url).replace(/^((?:https?|file|ftp|chrome-extension|moz-extension):\/\/.+)\/[^/]+$/, '$1') + '/';
+}
+
+exports.getBundleURL = getBundleURLCached;
+exports.getBaseURL = getBaseURL;
+},{}],"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/css-loader.js":[function(require,module,exports) {
+var bundle = require('./bundle-url');
+
+function updateLink(link) {
+  var newLink = link.cloneNode();
+
+  newLink.onload = function () {
+    link.remove();
+  };
+
+  newLink.href = link.href.split('?')[0] + '?' + Date.now();
+  link.parentNode.insertBefore(newLink, link.nextSibling);
+}
+
+var cssTimeout = null;
+
+function reloadCSS() {
+  if (cssTimeout) {
+    return;
+  }
+
+  cssTimeout = setTimeout(function () {
+    var links = document.querySelectorAll('link[rel="stylesheet"]');
+
+    for (var i = 0; i < links.length; i++) {
+      if (bundle.getBaseURL(links[i].href) === bundle.getBundleURL()) {
+        updateLink(links[i]);
+      }
+    }
+
+    cssTimeout = null;
+  }, 50);
+}
+
+module.exports = reloadCSS;
+},{"./bundle-url":"../../../../.nvm/versions/node/v12.14.1/lib/node_modules/parcel-bundler/src/builtins/bundle-url.js"}],"components/movie-view/movie-view.scss":[function(require,module,exports) {
 var reloadCSS = require('_css_loader');
 
 module.hot.dispose(reloadCSS);
