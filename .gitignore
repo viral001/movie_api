@@ -2,3 +2,4 @@ node_modules/
 
     .cache
 *.json
+.cache/a4/1c90e843778022732db8586cf8ccdb.json
