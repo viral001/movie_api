@@ -1,116 +1,78 @@
-import React, { useState, useEffect } from "react";
-import Form from "react-bootstrap/Form";
-import Button from "react-bootstrap/Button";
-import Alert from "react-bootstrap/Alert";
-import Col from "react-bootstrap/Col";
-import Row from "react-bootstrap/Row";
-import Animated from "react-css-animated";
+import React, { useState } from 'react';
+import PropTypes from 'prop-types';
 
-import axios from "axios";
+import Form from 'react-bootstrap/Form';
+import Button from 'react-bootstrap/Button';
+import Col from 'react-bootstrap/Col';
+import Row from 'react-bootstrap/Row';
+
+// import style
+import './login-view.scss';
 
 export function LoginView(props) {
-  const [username, setUsername] = useState("");
-  const [password, setPassword] = useState("");
-  const [validated, setValidated] = useState(false);
-  const [loginFail, setloginFail] = useState(false);
-  var mounted = true;
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [validated, setValidated] = useState(false);
+    // updating handle submit //https://soflix.herokuapp.com
+    const handleSubmit = e => {
+        e.preventDefault();
 
-  const handleSubmit = (event) => {
-    const form = event.currentTarget;
-    if (form.checkValidity() === false) {
-      event.preventDefault();
-      event.stopPropagation();
-    }
-    setValidated(true);
-
-    if (form.checkValidity() === true) {
-      if (mounted) {
-        event.preventDefault();
-        axios
-          .post("https://movie-api0.herokuapp.com/", {
-            Username: username,
-            Password: password,
-          })
-          .then((response) => {
-            const data = response.data;
-            props.onLoggedIn(data);
-          })
-          .catch((e) => {
-            setValidated(false);
-            setloginFail(true);
-          });
-      }
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      mounted = false;
+        const form = event.currentTarget;
+        if (form.checkValidity() === false) {
+            event.stopPropagation();
+        } else {
+            console.log('new login', username, 'with password', password);
+            /* Send a request to the server for authentication */
+            /* then call props.onLoggedIn(username) */
+            props.onLoggedIn(username);
+        }
+        setValidated(true);
     };
-  }, [mounted]);
 
-  return (
-    <Animated
-      className="h-100"
-      animateOnMount
-      animationIn="fadeInLeft"
-      duration={{ in: 600 }}
-      animationOut="fadeOutRight"
-      isVisible={props.animate}
-    >
-      <Col className="mt-5">
-        <h1 className="text-center pt-3">Login</h1>
-        <Form
-          className="col mx-auto "
-          noValidate
-          validated={validated}
-          onSubmit={handleSubmit}
-        >
-          <Form.Group controlId="validationCustom01">
-            <Form.Label>Username</Form.Label>
-            <Form.Control
-              required
-              isInvalid={loginFail}
-              type="text"
-              placeholder=""
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-            />
-
-            <Form.Control.Feedback type="invalid">
-              {loginFail
-                ? "Username/Password not found!"
-                : "Please Enter a valid Username"}
-            </Form.Control.Feedback>
-          </Form.Group>
-          <Form.Group controlId="validationCustom02">
-            <Form.Label>Password</Form.Label>
-            <Form.Control
-              required
-              isInvalid={loginFail}
-              type="password"
-              placeholder=""
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-            <Form.Control.Feedback type="invalid">
-              {loginFail
-                ? "Username/Password not found!"
-                : "Please enter a valid Password"}
-            </Form.Control.Feedback>
-            <Button
-              variant="link"
-              onClick={() => props.linkTo("/register", 700, false)}
-            >
-              Dont have an account? Click here to register!
+    // https://react-bootstrap.github.io/components/forms/
+    // React-bootstrap components form
+    // React-bootstrap container // https://stackoverflow.com/questions/44872273/how-to-replace-container-class-in-react-bootstrap
+    return (
+        <div className='login-view'>
+            <Row className='justify-content-center'>
+                <Col xs={11} sm={8} md={6} className='form-container'>
+                    <Form noValidate validated={validated} onSubmit={handleSubmit}>
+                        <Form.Group controlId='formBasicUsername'>
+                            <Form.Label>Username</Form.Label>
+                            <Form.Control
+                                type='text'
+                                value={username}
+                                onChange={e => setUsername(e.target.value)}
+                                required
+                                placeholder='Enter username'
+                            />
+                            <Form.Control.Feedback type='invalid'>
+                                Choose a Username.
+              </Form.Control.Feedback>
+                        </Form.Group>
+                        <Form.Group controlId='formBasicPassword'>
+                            <Form.Label>Password</Form.Label>
+                            <Form.Control
+                                type='password'
+                                value={password}
+                                onChange={e => setPassword(e.target.value)}
+                                required
+                                placeholder='Password'
+                            />
+                            <Form.Control.Feedback type='invalid'>
+                                Insert password.
+              </Form.Control.Feedback>
+                        </Form.Group>
+                        <Button variant='primary' type='submit'>
+                            Submit
             </Button>
-          </Form.Group>
-
-          <Button type="submit" className="d-block mx-auto">
-            Submit
-          </Button>
-        </Form>
-      </Col>
-    </Animated>
-  );
+                    </Form>
+                </Col>
+            </Row>
+        </div>
+    );
 }
+
+LoginView.propTypes = {
+    onLoggedIn: PropTypes.func.isRequired
+};
