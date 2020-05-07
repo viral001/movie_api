@@ -7,9 +7,8 @@ import { LoginView } from "../login-view/login-view";
 import { MovieCard } from "../movie-card/movie-card";
 import { MovieView } from "../movie-view/movie-view";
 import { RegistrationView } from "../registration-view/registration-view";
-//to update user profile page first import component
 import { ProfileView } from "../profile-view/profile-view";
-import { UpdateProfile } from "../update-profile/update-profile";
+//to update user profile page first import component
 import Container from "react-bootstrap/Container";
 import Row from "react-bootstrap/Row";
 import Col from "react-bootstrap/Col";
