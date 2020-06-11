@@ -54,13 +54,13 @@ export class MainView extends React.Component {
     }
   }
 
-  handleNewHash = () => {
+  handleNewHash() {
     const movieId = window.location.hash.replace(/^#\/?|\/$/g, "").split("/");
 
     this.setState({
       selectedMovieId: movieId[0],
     });
-  };
+  }
   //get the Movies after the User logged in
   getMovies(token) {
     axios
@@ -133,14 +133,14 @@ export class MainView extends React.Component {
     window.location.hash = "#";
   }
 
-  onLoggedIn = (authData) => {
+  onLoggedIn(authData) {
     this.setState({
       user: authData.user.Username,
     });
     localStorage.setItem("token", authData.token);
     localStorage.setItem("user", authData.user.Username);
     this.getMovies(authData.token);
-  };
+  }
 
   registerUser() {
     this.setState({
