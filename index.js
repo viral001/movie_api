@@ -10,6 +10,7 @@ const Movies = Models.Movie;
 const Users = Models.User;
 const cors = require("cors");
 const { check, validationResult } = require("express-validator");
+require("dotenv").config();
 
 app.use(bodyParser.json());
 const auth = require("./auth")(app);
