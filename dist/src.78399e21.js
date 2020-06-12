@@ -38848,26 +38848,6 @@ var MainView = /*#__PURE__*/function (_React$Component) {
     _classCallCheck(this, MainView);
 
     _this = _possibleConstructorReturn(this, _getPrototypeOf(MainView).call(this, props));
-
-    _this.handleNewHash = function () {
-      var movieId = window.location.hash.replace(/^#\/?|\/$/g, "").split("/");
-
-      _this.setState({
-        selectedMovieId: movieId[0]
-      });
-    };
-
-    _this.onLoggedIn = function (authData) {
-      _this.setState({
-        user: authData.user.Username
-      });
-
-      localStorage.setItem("token", authData.token);
-      localStorage.setItem("user", authData.user.Username);
-
-      _this.getMovies(authData.token);
-    };
-
     _this.state = {
       movies: null,
       selectedMovie: null,
@@ -38903,8 +38883,16 @@ var MainView = /*#__PURE__*/function (_React$Component) {
       }
     }
   }, {
+    key: "handleNewHash",
+    value: function handleNewHash() {
+      var movieId = window.location.hash.replace(/^#\/?|\/$/g, "").split("/");
+      this.setState({
+        selectedMovieId: movieId[0]
+      });
+    } //get the Movies after the User logged in
+
+  }, {
     key: "getMovies",
-    //get the Movies after the User logged in
     value: function getMovies(token) {
       var _this2 = this;
 
@@ -38976,6 +38964,16 @@ var MainView = /*#__PURE__*/function (_React$Component) {
         selectedMovieId: null
       });
       window.location.hash = "#";
+    }
+  }, {
+    key: "onLoggedIn",
+    value: function onLoggedIn(authData) {
+      this.setState({
+        user: authData.user.Username
+      });
+      localStorage.setItem("token", authData.token);
+      localStorage.setItem("user", authData.user.Username);
+      this.getMovies(authData.token);
     }
   }, {
     key: "registerUser",
@@ -39214,7 +39212,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "49807" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "59424" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
