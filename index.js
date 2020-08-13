@@ -20,11 +20,11 @@ require("./passport");
 //Mongoose database connection
 
 //mongoose.set('useFindAndModify', false);
+
 mongoose.connect(
-  "mongodb+srv://test001:test001@cluster0-ohukr.mongodb.net/test001?retryWrites=true&w=majority",
+  "mongodb+srv://movie_api:password001@cluster0-ohukr.mongodb.net/myflixdb?retryWrites=true&w=majority",
   { useNewUrlParser: true, useUnifiedTopology: true }
 );
-//mongoose.connect('mongodb+srv://test001:test001@cluster0-ohukr.mongodb.net/test?retryWrites=true&w=majority',
 
 // mongoose.connect(process.env.CONNECTION_URI, {
 //   useNewUrlParser: true,
