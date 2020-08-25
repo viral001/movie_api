@@ -21,10 +21,20 @@ require("./passport");
 
 //mongoose.set('useFindAndModify', false);
 
-mongoose.connect(
-"mongodb+srv://movie_api:password001@cluster0-ohukr.mongodb.net/myflixdb?retryWrites=true&w=majority",
-mongoose.connect( process.env.CONNECTION_URI, { useNewUrlParser: true, useUnifiedTopology: true });
+mongoose.connect(process.env.CONNECTION_URI, {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
 
+const app = express();
+app.use(bodyParser.json());
+app.use(morgan("common"));
+app.use(express.static(path.resolve("dist")));
+app.use(cors());
+app.use(function (err, req, res, next) {
+  console.error(err.stack);
+  res.status(500).send("Something ain't working right!");
+});
 
 //Middleware functions
 
