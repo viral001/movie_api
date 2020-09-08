@@ -26,10 +26,9 @@ mongoose.connect(process.env.CONNECTION_URI, {
   useUnifiedTopology: true,
 });
 
-const app = express();
 app.use(bodyParser.json());
 app.use(morgan("common"));
-app.use(express.static(path.resolve("dist")));
+// app.use(express.static(path.resolve("dist")));
 app.use(cors());
 app.use(function (err, req, res, next) {
   console.error(err.stack);
