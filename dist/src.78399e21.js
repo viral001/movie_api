@@ -6807,7 +6807,7 @@ if ("development" !== "production") {
       }
 
       var eventName = 'on' + eventNameSuffix;
-      var isSupported = eventName in document;
+      var isSupported = (eventName in document);
 
       if (!isSupported) {
         var element = document.createElement('div');
@@ -35569,21 +35569,25 @@ function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return 
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _nonIterableRest(); }
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
 
-function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance"); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 
-function _iterableToArrayLimit(arr, i) { if (!(Symbol.iterator in Object(arr) || Object.prototype.toString.call(arr) === "[object Arguments]")) { return; } var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { if (typeof Symbol === "undefined" || !(Symbol.iterator in Object(arr))) return; var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
 
 function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
 function LoginView(props) {
-  var _useState = (0, _react.useState)(''),
+  var _useState = (0, _react.useState)(""),
       _useState2 = _slicedToArray(_useState, 2),
       username = _useState2[0],
       setUsername = _useState2[1];
 
-  var _useState3 = (0, _react.useState)(''),
+  var _useState3 = (0, _react.useState)(""),
       _useState4 = _slicedToArray(_useState3, 2),
       password = _useState4[0],
       setPassword = _useState4[1];
@@ -35601,7 +35605,7 @@ function LoginView(props) {
     if (form.checkValidity() === false) {
       event.stopPropagation();
     } else {
-      console.log('new login', username, 'with password', password);
+      console.log("new login", username, "with password", password);
       /* Send a request to the server for authentication */
 
       /* then call props.onLoggedIn(username) */
@@ -35615,22 +35619,22 @@ function LoginView(props) {
   // React-bootstrap container // https://stackoverflow.com/questions/44872273/how-to-replace-container-class-in-react-bootstrap
 
 
-  return _react.default.createElement("div", {
+  return /*#__PURE__*/_react.default.createElement("div", {
     className: "login-view"
-  }, _react.default.createElement(_Row.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Row.default, {
     className: "justify-content-center"
-  }, _react.default.createElement(_Col.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Col.default, {
     xs: 11,
     sm: 8,
     md: 6,
     className: "form-container"
-  }, _react.default.createElement(_Form.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Form.default, {
     noValidate: true,
     validated: validated,
     onSubmit: handleSubmit
-  }, _react.default.createElement(_Form.default.Group, {
+  }, /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
     controlId: "formBasicUsername"
-  }, _react.default.createElement(_Form.default.Label, null, "Username"), _react.default.createElement(_Form.default.Control, {
+  }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Username"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
     type: "text",
     value: username,
     onChange: function onChange(e) {
@@ -35638,11 +35642,11 @@ function LoginView(props) {
     },
     required: true,
     placeholder: "Enter username"
-  }), _react.default.createElement(_Form.default.Control.Feedback, {
+  }), /*#__PURE__*/_react.default.createElement(_Form.default.Control.Feedback, {
     type: "invalid"
-  }, "Choose a Username.")), _react.default.createElement(_Form.default.Group, {
+  }, "Choose a Username.")), /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
     controlId: "formBasicPassword"
-  }, _react.default.createElement(_Form.default.Label, null, "Password"), _react.default.createElement(_Form.default.Control, {
+  }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Password"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
     type: "password",
     value: password,
     onChange: function onChange(e) {
@@ -35650,9 +35654,9 @@ function LoginView(props) {
     },
     required: true,
     placeholder: "Password"
-  }), _react.default.createElement(_Form.default.Control.Feedback, {
+  }), /*#__PURE__*/_react.default.createElement(_Form.default.Control.Feedback, {
     type: "invalid"
-  }, "Insert password.")), _react.default.createElement(_Button.default, {
+  }, "Insert password.")), /*#__PURE__*/_react.default.createElement(_Button.default, {
     variant: "primary",
     type: "submit"
   }, "Submit")))));
@@ -35857,23 +35861,29 @@ function _defineProperties(target, props) { for (var i = 0; i < props.length; i+
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
-function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
-
-function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
-
-function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
-
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
 
 function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
 
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
 var MovieCard = /*#__PURE__*/function (_React$Component) {
   _inherits(MovieCard, _React$Component);
+
+  var _super = _createSuper(MovieCard);
 
   function MovieCard() {
     _classCallCheck(this, MovieCard);
 
-    return _possibleConstructorReturn(this, _getPrototypeOf(MovieCard).apply(this, arguments));
+    return _super.apply(this, arguments);
   }
 
   _createClass(MovieCard, [{
@@ -35882,14 +35892,14 @@ var MovieCard = /*#__PURE__*/function (_React$Component) {
       var _this$props = this.props,
           movie = _this$props.movie,
           _onClick = _this$props.onClick;
-      return _react.default.createElement(_Card.default, {
+      return /*#__PURE__*/_react.default.createElement(_Card.default, {
         style: {
           width: "16rem"
         }
-      }, _react.default.createElement(_Card.default.Img, {
+      }, /*#__PURE__*/_react.default.createElement(_Card.default.Img, {
         variant: "top",
         src: movie.ImagePath
-      }), _react.default.createElement(_Card.default.Body, null, _react.default.createElement(_Card.default.Title, null, movie.Title), _react.default.createElement(_Card.default.Text, null, movie.Description), _react.default.createElement(_Button.default, {
+      }), /*#__PURE__*/_react.default.createElement(_Card.default.Body, null, /*#__PURE__*/_react.default.createElement(_Card.default.Title, null, movie.Title), /*#__PURE__*/_react.default.createElement(_Card.default.Text, null, movie.Description), /*#__PURE__*/_react.default.createElement(_Button.default, {
         onClick: function onClick() {
           return _onClick(movie);
         },
@@ -35981,25 +35991,31 @@ function _defineProperties(target, props) { for (var i = 0; i < props.length; i+
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
-function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
-
-function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
-
-function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
-
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
 
 function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
 
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
 var MovieView = /*#__PURE__*/function (_React$Component) {
   _inherits(MovieView, _React$Component);
+
+  var _super = _createSuper(MovieView);
 
   function MovieView() {
     var _this;
 
     _classCallCheck(this, MovieView);
 
-    _this = _possibleConstructorReturn(this, _getPrototypeOf(MovieView).call(this));
+    _this = _super.call(this);
     _this.state = {};
     return _this;
   }
@@ -36011,11 +36027,11 @@ var MovieView = /*#__PURE__*/function (_React$Component) {
           movie = _this$props.movie,
           onClick = _this$props.onClick;
       if (!movie) return null;
-      return _react.default.createElement("div", {
+      return /*#__PURE__*/_react.default.createElement("div", {
         className: "movie-view"
-      }, _react.default.createElement("h1", null, movie.Title), _react.default.createElement(_Media.default, {
+      }, /*#__PURE__*/_react.default.createElement("h1", null, movie.Title), /*#__PURE__*/_react.default.createElement(_Media.default, {
         className: "d-flex flex-column flex-md-row align-items-center"
-      }, _react.default.createElement(_Media.default.Body, null, _react.default.createElement("h5", null, "Genre: ", movie.Genre.Name), _react.default.createElement("h5", null, "Director: ", movie.Director.Name), _react.default.createElement("br", null), _react.default.createElement("h5", null, "Description"), _react.default.createElement("p", null, movie.Description)), _react.default.createElement("img", {
+      }, /*#__PURE__*/_react.default.createElement(_Media.default.Body, null, /*#__PURE__*/_react.default.createElement("h5", null, "Genre: ", movie.Genre.Name), /*#__PURE__*/_react.default.createElement("h5", null, "Director: ", movie.Director.Name), /*#__PURE__*/_react.default.createElement("br", null), /*#__PURE__*/_react.default.createElement("h5", null, "Description"), /*#__PURE__*/_react.default.createElement("p", null, movie.Description)), /*#__PURE__*/_react.default.createElement("img", {
         width: 200,
         height: 300,
         className: "ml-3",
@@ -36076,11 +36092,15 @@ function _getRequireWildcardCache() { if (typeof WeakMap !== "function") return 
 
 function _interopRequireWildcard(obj) { if (obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _nonIterableRest(); }
+function _slicedToArray(arr, i) { return _arrayWithHoles(arr) || _iterableToArrayLimit(arr, i) || _unsupportedIterableToArray(arr, i) || _nonIterableRest(); }
 
-function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance"); }
+function _nonIterableRest() { throw new TypeError("Invalid attempt to destructure non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); }
 
-function _iterableToArrayLimit(arr, i) { if (!(Symbol.iterator in Object(arr) || Object.prototype.toString.call(arr) === "[object Arguments]")) { return; } var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
+function _unsupportedIterableToArray(o, minLen) { if (!o) return; if (typeof o === "string") return _arrayLikeToArray(o, minLen); var n = Object.prototype.toString.call(o).slice(8, -1); if (n === "Object" && o.constructor) n = o.constructor.name; if (n === "Map" || n === "Set") return Array.from(o); if (n === "Arguments" || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(n)) return _arrayLikeToArray(o, minLen); }
+
+function _arrayLikeToArray(arr, len) { if (len == null || len > arr.length) len = arr.length; for (var i = 0, arr2 = new Array(len); i < len; i++) { arr2[i] = arr[i]; } return arr2; }
+
+function _iterableToArrayLimit(arr, i) { if (typeof Symbol === "undefined" || !(Symbol.iterator in Object(arr))) return; var _arr = []; var _n = true; var _d = false; var _e = undefined; try { for (var _i = arr[Symbol.iterator](), _s; !(_n = (_s = _i.next()).done); _n = true) { _arr.push(_s.value); if (i && _arr.length === i) break; } } catch (err) { _d = true; _e = err; } finally { try { if (!_n && _i["return"] != null) _i["return"](); } finally { if (_d) throw _e; } } return _arr; }
 
 function _arrayWithHoles(arr) { if (Array.isArray(arr)) return arr; }
 
@@ -36123,9 +36143,9 @@ function RegistrationView(props) {
       feedback = "Please insert your ".concat(label.toLowerCase(), ".");
     }
 
-    return _react.default.createElement(_Form.default.Group, {
+    return /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
       controlId: "formBasicUsername"
-    }, _react.default.createElement(_Form.default.Label, null, label), _react.default.createElement(_Form.default.Control, {
+    }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, label), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
       type: type,
       value: value,
       onChange: function onChange(e) {
@@ -36133,7 +36153,7 @@ function RegistrationView(props) {
       },
       required: true,
       placeholder: "Enter ".concat(label.toLowerCase())
-    }), _react.default.createElement(_Form.default.Control.Feedback, {
+    }), /*#__PURE__*/_react.default.createElement(_Form.default.Control.Feedback, {
       type: "invalid"
     }, feedback));
   };
@@ -36153,20 +36173,20 @@ function RegistrationView(props) {
     setValidated(true);
   };
 
-  return _react.default.createElement("div", {
+  return /*#__PURE__*/_react.default.createElement("div", {
     className: "registration-view"
-  }, _react.default.createElement(_Row.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Row.default, {
     className: "justify-content-center"
-  }, _react.default.createElement(_Col.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Col.default, {
     xs: 11,
     sm: 8,
     md: 6,
     className: "form-container"
-  }, _react.default.createElement(_Form.default, {
+  }, /*#__PURE__*/_react.default.createElement(_Form.default, {
     noValidate: true,
     validated: validated,
     onSubmit: handleSubmit
-  }, formField('Name', name, setName), formField('Username', username, setUsername), formField('Password', password, setPassword, 'password'), formField('Email', email, setEmail, 'email', 'Please provide a valid email address.'), formField('Birthday', birthday, setBirthday, 'date', 'Please provide a valid date (e.g. 01/01/1970).'), _react.default.createElement(_Button.default, {
+  }, formField('Name', name, setName), formField('Username', username, setUsername), formField('Password', password, setPassword, 'password'), formField('Email', email, setEmail, 'email', 'Please provide a valid email address.'), formField('Birthday', birthday, setBirthday, 'date', 'Please provide a valid date (e.g. 01/01/1970).'), /*#__PURE__*/_react.default.createElement(_Button.default, {
     variant: "primary",
     type: "submit"
   }, "Submit")))));
@@ -37496,9 +37516,9 @@ try {
     window.addEventListener('test', options, options);
     window.removeEventListener('test', options, true);
   }
-} catch (e) {}
-/* */
-
+} catch (e) {
+  /* */
+}
 /**
  * An `addEventListener` ponyfill, supports the `once` option
  */
@@ -38511,25 +38531,31 @@ function _defineProperties(target, props) { for (var i = 0; i < props.length; i+
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
-function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
-
-function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
-
-function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
-
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
 
 function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
 
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
 var ProfileView = /*#__PURE__*/function (_React$Component) {
   _inherits(ProfileView, _React$Component);
+
+  var _super = _createSuper(ProfileView);
 
   function ProfileView(props) {
     var _this;
 
     _classCallCheck(this, ProfileView);
 
-    _this = _possibleConstructorReturn(this, _getPrototypeOf(ProfileView).call(this, props));
+    _this = _super.call(this, props);
     _this.state = {
       username: null,
       email: null,
@@ -38587,51 +38613,51 @@ var ProfileView = /*#__PURE__*/function (_React$Component) {
       var _this4 = this;
 
       if (!localStorage.user) {
-        return _react.default.createElement(_reactRouterDom.Redirect, {
+        return /*#__PURE__*/_react.default.createElement(_reactRouterDom.Redirect, {
           to: "/"
         });
       } else {
         console.log(this.props.movies);
-        return _react.default.createElement(_Container.default, {
+        return /*#__PURE__*/_react.default.createElement(_Container.default, {
           className: "profile-view"
-        }, _react.default.createElement(_Row.default, null, _react.default.createElement(_Col.default, null, _react.default.createElement("h2", null, "User profile"), _react.default.createElement("div", {
+        }, /*#__PURE__*/_react.default.createElement(_Row.default, null, /*#__PURE__*/_react.default.createElement(_Col.default, null, /*#__PURE__*/_react.default.createElement("h2", null, "User profile"), /*#__PURE__*/_react.default.createElement("div", {
           className: "user-username"
-        }, _react.default.createElement("h3", {
+        }, /*#__PURE__*/_react.default.createElement("h3", {
           className: "label"
-        }, "Username"), _react.default.createElement("p", {
+        }, "Username"), /*#__PURE__*/_react.default.createElement("p", {
           className: "value"
-        }, this.state.username, " ", _react.default.createElement(EditProfile, {
+        }, this.state.username, " ", /*#__PURE__*/_react.default.createElement(EditProfile, {
           type: "username"
-        }))), _react.default.createElement("div", {
+        }))), /*#__PURE__*/_react.default.createElement("div", {
           className: "user-email"
-        }, _react.default.createElement("h3", {
+        }, /*#__PURE__*/_react.default.createElement("h3", {
           className: "label"
-        }, "Email"), _react.default.createElement("p", {
+        }, "Email"), /*#__PURE__*/_react.default.createElement("p", {
           className: "value"
-        }, this.state.email, " ", _react.default.createElement(EditProfile, {
+        }, this.state.email, " ", /*#__PURE__*/_react.default.createElement(EditProfile, {
           type: "email"
-        }))), _react.default.createElement("div", {
+        }))), /*#__PURE__*/_react.default.createElement("div", {
           className: "user-birthday"
-        }, _react.default.createElement("h3", {
+        }, /*#__PURE__*/_react.default.createElement("h3", {
           className: "label"
-        }, "Birthday"), _react.default.createElement("p", {
+        }, "Birthday"), /*#__PURE__*/_react.default.createElement("p", {
           className: "value"
-        }, this.state.birthday, " ", _react.default.createElement(EditProfile, {
+        }, this.state.birthday, " ", /*#__PURE__*/_react.default.createElement(EditProfile, {
           type: "date"
-        }))))), _react.default.createElement(_Row.default, null, _react.default.createElement(_Col.default, null, _react.default.createElement("h3", {
+        }))))), /*#__PURE__*/_react.default.createElement(_Row.default, null, /*#__PURE__*/_react.default.createElement(_Col.default, null, /*#__PURE__*/_react.default.createElement("h3", {
           className: "label"
-        }, "Favorite Movies"), _react.default.createElement(_ListGroup.default, {
+        }, "Favorite Movies"), /*#__PURE__*/_react.default.createElement(_ListGroup.default, {
           className: "user-favorite-movies"
         }, this.props.movies.map(function (mov) {
           if (mov._id === _this4.state.favoriteMovies.find(function (favMov) {
             return favMov === mov._id;
           })) {
-            return _react.default.createElement(_ListGroup.default.Item, null, mov.Title, _react.default.createElement(_reactRouterDom.Link, {
+            return /*#__PURE__*/_react.default.createElement(_ListGroup.default.Item, null, mov.Title, /*#__PURE__*/_react.default.createElement(_reactRouterDom.Link, {
               to: "/movies/".concat(mov._id)
-            }, _react.default.createElement(_Button.default, {
+            }, /*#__PURE__*/_react.default.createElement(_Button.default, {
               variant: "primary",
               size: "sm"
-            }, "View")), _react.default.createElement(_Button.default, {
+            }, "View")), /*#__PURE__*/_react.default.createElement(_Button.default, {
               variant: "danger",
               size: "sm",
               onClick: function onClick() {
@@ -38654,12 +38680,14 @@ exports.ProfileView = ProfileView;
 var EditProfile = /*#__PURE__*/function (_React$Component2) {
   _inherits(EditProfile, _React$Component2);
 
+  var _super2 = _createSuper(EditProfile);
+
   function EditProfile(props) {
     var _this5;
 
     _classCallCheck(this, EditProfile);
 
-    _this5 = _possibleConstructorReturn(this, _getPrototypeOf(EditProfile).call(this, props));
+    _this5 = _super2.call(this, props);
     _this5.state = {
       open: false,
       userInput: null
@@ -38673,54 +38701,54 @@ var EditProfile = /*#__PURE__*/function (_React$Component2) {
       var _this6 = this;
 
       var open = this.state.open;
-      return _react.default.createElement("div", {
+      return /*#__PURE__*/_react.default.createElement("div", {
         className: "profile-view"
-      }, _react.default.createElement("h1", {
+      }, /*#__PURE__*/_react.default.createElement("h1", {
         className: "director"
-      }, "User Profile"), _react.default.createElement("div", {
+      }, "User Profile"), /*#__PURE__*/_react.default.createElement("div", {
         className: "username"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "label"
-      }, "Name"), _react.default.createElement("div", {
+      }, "Name"), /*#__PURE__*/_react.default.createElement("div", {
         className: "value"
-      }, user.Username)), _react.default.createElement("div", {
+      }, user.Username)), /*#__PURE__*/_react.default.createElement("div", {
         className: "password"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "label"
-      }, "Password"), _react.default.createElement("div", {
+      }, "Password"), /*#__PURE__*/_react.default.createElement("div", {
         className: "value"
-      }, "********")), _react.default.createElement("div", {
+      }, "********")), /*#__PURE__*/_react.default.createElement("div", {
         className: "birthday"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "label"
-      }, "Birthday"), _react.default.createElement("div", {
+      }, "Birthday"), /*#__PURE__*/_react.default.createElement("div", {
         className: "value"
-      }, user.Birthday)), _react.default.createElement("div", {
+      }, user.Birthday)), /*#__PURE__*/_react.default.createElement("div", {
         className: "email"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "label"
-      }, "Email"), _react.default.createElement("div", {
+      }, "Email"), /*#__PURE__*/_react.default.createElement("div", {
         className: "value"
-      }, user.Email)), _react.default.createElement("div", {
+      }, user.Email)), /*#__PURE__*/_react.default.createElement("div", {
         className: "favoritemovies"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "label"
-      }, "Favorite Movies"), _react.default.createElement("div", {
+      }, "Favorite Movies"), /*#__PURE__*/_react.default.createElement("div", {
         className: "value"
-      }, user.FavoriteMovies)), _react.default.createElement(_reactRouterDom.Link, {
+      }, user.FavoriteMovies)), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Link, {
         to: "/"
-      }, _react.default.createElement(_Button.default, {
+      }, /*#__PURE__*/_react.default.createElement(_Button.default, {
         className: "view-btn",
         variant: "outline-dark",
         type: "button"
-      }, "Back")), _react.default.createElement(_Button.default, {
+      }, "Back")), /*#__PURE__*/_react.default.createElement(_Button.default, {
         className: "view-btn",
         variant: "outline-dark",
         type: "button",
         onClick: function onClick(event) {
           return _this6.deleteUser(event);
         }
-      }, "Delete"), _react.default.createElement(_Button.default, {
+      }, "Delete"), /*#__PURE__*/_react.default.createElement(_Button.default, {
         id: "toggleButton",
         className: "vuew-btn",
         variant: "outline-dark",
@@ -38728,47 +38756,47 @@ var EditProfile = /*#__PURE__*/function (_React$Component2) {
         onClick: function onClick() {
           return _this6.toggleForm();
         }
-      }, "Change Data"), _react.default.createElement(_Form.default, {
+      }, "Change Data"), /*#__PURE__*/_react.default.createElement(_Form.default, {
         className: "changeDataForm"
-      }, _react.default.createElement("h2", null, "Change Data"), _react.default.createElement(_Form.default.Group, {
+      }, /*#__PURE__*/_react.default.createElement("h2", null, "Change Data"), /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
         controlId: "formBasicUsername"
-      }, _react.default.createElement(_Form.default.Label, null, "Your Username"), _react.default.createElement(_Form.default.Control, {
+      }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Your Username"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
         type: "text",
         name: "username",
         onChange: function onChange(event) {
           return _this6.handleChange(event);
         },
         Placeholder: "Enter Username"
-      }), _react.default.createElement(_Form.default.Text, {
+      }), /*#__PURE__*/_react.default.createElement(_Form.default.Text, {
         className: "text-muted"
-      }, "Type username here.")), _react.default.createElement(_Form.default.Group, {
+      }, "Type username here.")), /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
         controlId: "formBasicPassword"
-      }, _react.default.createElement(_Form.default.Label, null, "Your Password"), _react.default.createElement(_Form.default.Control, {
+      }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Your Password"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
         type: "text",
         name: "password",
         onChange: function onChange(event) {
           return _this6.handleChange(event);
         },
         Placeholder: "Password"
-      })), _react.default.createElement(_Form.default.Group, {
+      })), /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
         controlId: "formBasicEmail"
-      }, _react.default.createElement(_Form.default.Label, null, "Your Email"), _react.default.createElement(_Form.default.Control, {
+      }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Your Email"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
         type: "text",
         name: "Email",
         onChange: function onChange(event) {
           return _this6.handleChange(event);
         },
         Placeholder: "example@email.com"
-      })), _react.default.createElement(_Form.default.Group, {
+      })), /*#__PURE__*/_react.default.createElement(_Form.default.Group, {
         controlId: "formBasicBirthday"
-      }, _react.default.createElement(_Form.default.Label, null, "Your Birthday"), _react.default.createElement(_Form.default.Control, {
+      }, /*#__PURE__*/_react.default.createElement(_Form.default.Label, null, "Your Birthday"), /*#__PURE__*/_react.default.createElement(_Form.default.Control, {
         type: "text",
         name: "birthday",
         onChange: function onChange(event) {
           return _this6.handleChange(event);
         },
         Placeholder: "Birthday"
-      })), _react.default.createElement(_Button.default, {
+      })), /*#__PURE__*/_react.default.createElement(_Button.default, {
         variant: "outline-dark",
         type: "button",
         onClick: function onClick(event) {
@@ -38829,25 +38857,31 @@ function _defineProperties(target, props) { for (var i = 0; i < props.length; i+
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
-function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
-
-function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
-
-function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
-
 function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
 
 function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
 
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
+function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
+
+function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
+
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
+function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
+
 var MainView = /*#__PURE__*/function (_React$Component) {
   _inherits(MainView, _React$Component);
+
+  var _super = _createSuper(MainView);
 
   function MainView(props) {
     var _this;
 
     _classCallCheck(this, MainView);
 
-    _this = _possibleConstructorReturn(this, _getPrototypeOf(MainView).call(this, props));
+    _this = _super.call(this, props);
     _this.state = {
       movies: null,
       selectedMovie: null,
@@ -39001,14 +39035,14 @@ var MainView = /*#__PURE__*/function (_React$Component) {
           newUser = _this$state.newUser;
 
       if (!user) {
-        if (newUser) return _react.default.createElement(_registrationView.RegistrationView, {
+        if (newUser) return /*#__PURE__*/_react.default.createElement(_registrationView.RegistrationView, {
           userRegistered: function userRegistered() {
             return _this4.userRegistered();
           },
           onLoggedIn: function onLoggedIn(user) {
             return _this4.onLoggedIn(user);
           }
-        });else return _react.default.createElement(_loginView.LoginView, {
+        });else return /*#__PURE__*/_react.default.createElement(_loginView.LoginView, {
           onLoggedIn: function onLoggedIn(user) {
             return _this4.onLoggedIn(user);
           },
@@ -39021,97 +39055,97 @@ var MainView = /*#__PURE__*/function (_React$Component) {
         });
       }
 
-      if (!movies) return _react.default.createElement("div", {
+      if (!movies) return /*#__PURE__*/_react.default.createElement("div", {
         className: "main-view"
       });
       var selectedMovie = selectedMovieId ? movies.find(function (movie) {
         return movie._id === selectedMovieId;
       }) : null;
-      return _react.default.createElement(_reactRouterDom.BrowserRouter, null, _react.default.createElement(_Container.default, {
+      return /*#__PURE__*/_react.default.createElement(_reactRouterDom.BrowserRouter, null, /*#__PURE__*/_react.default.createElement(_Container.default, {
         className: "main-view",
         fluid: "true"
-      }, _react.default.createElement("div", {
+      }, /*#__PURE__*/_react.default.createElement("div", {
         className: "upButton"
-      }, _react.default.createElement(_Button.default, {
+      }, /*#__PURE__*/_react.default.createElement(_Button.default, {
         className: "logoutButton",
         onClick: function onClick() {
           return _this4.buttonLogout();
         }
-      }, "Log Out"), _react.default.createElement(_reactRouterDom.Link, {
+      }, "Log Out"), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Link, {
         to: "/"
-      }, _react.default.createElement(_Button.default, {
+      }, /*#__PURE__*/_react.default.createElement(_Button.default, {
         className: "back-btn",
         variant: "primary"
-      }, "Go back"))), _react.default.createElement(_reactRouterDom.Link, {
+      }, "Go back"))), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Link, {
         to: "/users/:username"
-      }, _react.default.createElement(_Button.default, {
+      }, /*#__PURE__*/_react.default.createElement(_Button.default, {
         variant: "primary"
-      }, "Profile View")), _react.default.createElement(_reactRouterDom.Link, {
+      }, "Profile View")), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Link, {
         to: "/update/:username"
-      }, _react.default.createElement(_Button.default, {
+      }, /*#__PURE__*/_react.default.createElement(_Button.default, {
         variant: "primary"
-      }, "Update Profile")), _react.default.createElement(_Row.default, null, _react.default.createElement(_reactRouterDom.Route, {
+      }, "Update Profile")), /*#__PURE__*/_react.default.createElement(_Row.default, null, /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         exact: true,
         path: "/",
         render: function render() {
           if (!user) {
-            return _react.default.createElement(_loginView.LoginView, {
+            return /*#__PURE__*/_react.default.createElement(_loginView.LoginView, {
               onLoggedIn: function onLoggedIn(user) {
                 return _this4.onLoggedIn(user);
               }
             });
           } else {
             return movies.map(function (movie) {
-              return _react.default.createElement(_Col.default, {
+              return /*#__PURE__*/_react.default.createElement(_Col.default, {
                 xl: 3,
                 sm: 3,
                 md: 5,
                 xs: 5
-              }, _react.default.createElement(_movieCard.MovieCard, {
+              }, /*#__PURE__*/_react.default.createElement(_movieCard.MovieCard, {
                 key: movie._id,
                 movie: movie
               }));
             });
           }
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/register",
         render: function render() {
-          return _react.default.createElement(_registrationView.RegistrationView, null);
+          return /*#__PURE__*/_react.default.createElement(_registrationView.RegistrationView, null);
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/profile",
         render: function render() {
-          return _react.default.createElement(_profileView.ProfileView, {
+          return /*#__PURE__*/_react.default.createElement(_profileView.ProfileView, {
             movies: _this4.state.movies
           });
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/movies/:Id",
         render: function render(_ref) {
           var match = _ref.match;
-          return _react.default.createElement(_Col.default, null, _react.default.createElement(_movieView.MovieView, {
+          return /*#__PURE__*/_react.default.createElement(_Col.default, null, /*#__PURE__*/_react.default.createElement(_movieView.MovieView, {
             movie: movies.find(function (movie) {
               return movie._id === match.params.Id;
             })
           }));
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/genres/:Genre",
         render: function render() {
-          return _react.default.createElement(GenreView, null);
+          return /*#__PURE__*/_react.default.createElement(GenreView, null);
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/directors/:Director",
         render: function render() {
-          return _react.default.createElement(DirectorView, null);
+          return /*#__PURE__*/_react.default.createElement(DirectorView, null);
         }
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/update/:username",
         exact: true,
         strict: true,
         component: UpdateProfile
-      }), _react.default.createElement(_reactRouterDom.Route, {
+      }), /*#__PURE__*/_react.default.createElement(_reactRouterDom.Route, {
         path: "/username/:username",
         exact: true,
         strict: true,
@@ -39150,30 +39184,36 @@ function _defineProperties(target, props) { for (var i = 0; i < props.length; i+
 
 function _createClass(Constructor, protoProps, staticProps) { if (protoProps) _defineProperties(Constructor.prototype, protoProps); if (staticProps) _defineProperties(Constructor, staticProps); return Constructor; }
 
+function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
+
+function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
+
+function _createSuper(Derived) { var hasNativeReflectConstruct = _isNativeReflectConstruct(); return function _createSuperInternal() { var Super = _getPrototypeOf(Derived), result; if (hasNativeReflectConstruct) { var NewTarget = _getPrototypeOf(this).constructor; result = Reflect.construct(Super, arguments, NewTarget); } else { result = Super.apply(this, arguments); } return _possibleConstructorReturn(this, result); }; }
+
 function _possibleConstructorReturn(self, call) { if (call && (_typeof(call) === "object" || typeof call === "function")) { return call; } return _assertThisInitialized(self); }
 
 function _assertThisInitialized(self) { if (self === void 0) { throw new ReferenceError("this hasn't been initialised - super() hasn't been called"); } return self; }
 
+function _isNativeReflectConstruct() { if (typeof Reflect === "undefined" || !Reflect.construct) return false; if (Reflect.construct.sham) return false; if (typeof Proxy === "function") return true; try { Date.prototype.toString.call(Reflect.construct(Date, [], function () {})); return true; } catch (e) { return false; } }
+
 function _getPrototypeOf(o) { _getPrototypeOf = Object.setPrototypeOf ? Object.getPrototypeOf : function _getPrototypeOf(o) { return o.__proto__ || Object.getPrototypeOf(o); }; return _getPrototypeOf(o); }
-
-function _inherits(subClass, superClass) { if (typeof superClass !== "function" && superClass !== null) { throw new TypeError("Super expression must either be null or a function"); } subClass.prototype = Object.create(superClass && superClass.prototype, { constructor: { value: subClass, writable: true, configurable: true } }); if (superClass) _setPrototypeOf(subClass, superClass); }
-
-function _setPrototypeOf(o, p) { _setPrototypeOf = Object.setPrototypeOf || function _setPrototypeOf(o, p) { o.__proto__ = p; return o; }; return _setPrototypeOf(o, p); }
 
 // Main component (will eventually use all the others)
 var MyFlixApplication = /*#__PURE__*/function (_React$Component) {
   _inherits(MyFlixApplication, _React$Component);
 
+  var _super = _createSuper(MyFlixApplication);
+
   function MyFlixApplication() {
     _classCallCheck(this, MyFlixApplication);
 
-    return _possibleConstructorReturn(this, _getPrototypeOf(MyFlixApplication).apply(this, arguments));
+    return _super.apply(this, arguments);
   }
 
   _createClass(MyFlixApplication, [{
     key: "render",
     value: function render() {
-      return _react.default.createElement(_mainView.MainView, null);
+      return /*#__PURE__*/_react.default.createElement(_mainView.MainView, null);
     }
   }]);
 
@@ -39212,7 +39252,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "51383" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "49626" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
