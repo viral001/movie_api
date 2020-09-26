@@ -39003,7 +39003,7 @@ var MainView = /*#__PURE__*/function (_React$Component) {
     key: "onLoggedIn",
     value: function onLoggedIn(authData) {
       this.setState({
-        user: authData.user.Username
+        user: authData.user.username
       });
       localStorage.setItem("token", authData.token);
       localStorage.setItem("user", authData.user.Username);
@@ -39252,7 +39252,7 @@ var parent = module.bundle.parent;
 if ((!parent || !parent.isParcelRequire) && typeof WebSocket !== 'undefined') {
   var hostname = "" || location.hostname;
   var protocol = location.protocol === 'https:' ? 'wss' : 'ws';
-  var ws = new WebSocket(protocol + '://' + hostname + ':' + "49626" + '/');
+  var ws = new WebSocket(protocol + '://' + hostname + ':' + "51103" + '/');
 
   ws.onmessage = function (event) {
     checkedAssets = {};
